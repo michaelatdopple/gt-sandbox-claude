@@ -754,7 +754,108 @@ Existing `start()` and `MotionData` payload remain unchanged — no breaking cha
 
 ---
 
-## Appendix A: Research Sources
+## Appendix A: Open Source Reference Projects
+
+### Tier 1: Directly Applicable
+
+#### x-io Fusion (Madgwick's Latest AHRS) — **PRIMARY REFERENCE**
+- **URL:** https://github.com/xioTechnologies/Fusion
+- **Language:** C (MIT license), ~1.5k stars
+- **What:** The definitive AHRS library by Sebastian Madgwick. Combines gyro + accel + optional magnetometer into quaternion orientation via complementary filter with gradient-descent correction.
+- **Key patterns to port:**
+  - **Automatic gyro bias estimation** — detects stillness (all axes < 3.0 dps for 5 seconds), runs a 0.02 Hz high-pass filter to extract DC drift, subtracts from readings. No explicit calibration step needed.
+  - **Acceleration rejection** — compares predicted gravity (from current quaternion) vs measured gravity. If angular error exceeds threshold, ignores accelerometer that frame. Hysteretic counter (+1 per rejection, -9 per acceptance) triggers recovery if rejection exceeds 90% over configurable period.
+  - **Magnetic rejection** — identical mechanism to acceleration rejection for magnetometer heading.
+  - **Recovery mechanisms** — if sensor is rejected too long, forces re-acceptance to prevent permanent lockout. Angular rate recovery resets algorithm (preserving quaternion) if gyro nears sensor range limit.
+  - **Gain ramping** — initializes with gain=10.0, ramps down to target (e.g., 0.5) over 3 seconds for fast initial convergence.
+  - **Linear acceleration output** — gravity-subtracted accelerometer, both in sensor frame and Earth frame.
+- **Porting effort:** ~600 lines of C → Kotlin. Self-contained, no dependencies. Data classes + inline math functions translate cleanly.
+
+#### GamepadMotionHelpers — **GAMING-SPECIFIC REFERENCE**
+- **URL:** https://github.com/JibbSmart/GamepadMotionHelpers
+- **Language:** C++ header-only (MIT license), ~55 stars
+- **What:** Purpose-built for game controller gyro. Created by the developer behind gyro aiming standards (used in JoyShockMapper, popular with Steam Deck community).
+- **Key patterns to port:**
+  - **Player Space gyro** — hybrid approach that projects yaw onto gravity axis with a "relaxation factor" (1.41x) and clamps to raw gyro magnitude. Pitch stays in local space. Minimizes drift while feeling responsive. This is the key innovation for gaming IMU:
+    ```
+    worldYaw = -(gravY * gyroY + gravZ * gyroZ)  // gravity-projected yaw
+    y = sign(worldYaw) * min(|worldYaw| * 1.41, sqrt(gyroY² + gyroZ²))  // relaxed + clamped
+    x = gyroX  // local pitch, unmodified
+    ```
+  - **Stillness calibration** — adaptive threshold system: tracks min observed motion (MinDeltaGyro), requires all 6 axes (3 gyro + 3 accel) below threshold for 2+ seconds. Bias estimated via window midpoint with exponential half-life smoothing. Confidence grows during stillness, making subsequent changes more gradual.
+  - **Sensor fusion calibration** — computes angular velocity from accelerometer direction changes (cross product of consecutive normalized gravity vectors), compares with gyro. Difference = bias error. Only applies to axes where accelerometer has authority (gravity component > 0.7). Smoothing prevents false corrections.
+  - **Combined calibration** — stillness for high-confidence axes, sensor fusion fills gaps on weak axes. Best of both worlds.
+  - **Three gyro spaces** — Local (raw), World (full gravity-adjusted yaw + perpendicular pitch), Player (loose gravity-adjusted yaw + local pitch). Player space is the recommended default for gaming.
+  - **Shakiness tracking** — exponential decay of acceleration deviation magnitude, used to modulate gravity correction speed. High shakiness → slow correction. Still → fast correction.
+- **Porting effort:** ~1200 lines of C++ → Kotlin. Single header, no dependencies. Complex but well-structured.
+
+#### FSensor — **ANDROID-NATIVE REFERENCE**
+- **URL:** https://github.com/KalebKE/FSensor
+- **Language:** Java/Kotlin (Apache 2.0 license), ~211 stars
+- **What:** Android sensor fusion library with Complementary, Kalman, and Low-Pass filters. Already wraps Android SensorManager.
+- **Key patterns to reference:**
+  - **Complementary filter** — frequency-domain fusion: `alpha = timeConstant / (timeConstant + dt)`, gyro weighted by alpha, accel/mag by (1-alpha). Default time constant 0.18s.
+  - **Kalman filter** — Apache Commons Math KalmanFilter with 4D quaternion state. Predict step uses gyro, correct step uses accel/mag-derived orientation. Process/measurement noise both 0.01.
+  - **Adaptive frequency** — filters calculate actual sensor delivery rate dynamically, making all time constants device-agnostic.
+  - **Magnetic calibration** — ellipsoid-to-sphere fitting for hard/soft iron compensation.
+  - **Quaternion integration** — `deltaQ = AngleAxis(magnitude * dt, normalized_gyro)`, `Q *= deltaQ`.
+- **Porting effort:** Already Java/Kotlin. Could reference directly or adapt patterns. Uses Apache Commons Math (heavy dependency).
+
+### Tier 2: Architecture & Approach References
+
+#### Monado (OpenXR Runtime)
+- **URL:** https://gitlab.freedesktop.org/monado/monado
+- **Language:** C/C++ (Boost license)
+- **What:** Production OpenXR runtime backed by Collabora. Has dedicated `m_imu_3dof` module for IMU-only 3DOF devices (phone VR). Uses flexkalman EKF.
+- **Relevant:** Architecture for how a production VR runtime structures its 3DOF path. Separates gyro integration from accel-based gravity correction.
+
+#### cardboard-vr-display (WebVR Polyfill)
+- **URL:** https://github.com/immersive-web/cardboard-vr-display
+- **Language:** JavaScript (Apache 2.0), ~96 stars
+- **What:** JavaScript 3DOF tracking for phone VR. Complementary filter (K=0.98) with 40ms motion prediction. Falls back between sensor APIs gracefully.
+- **Relevant:** If we ever want sensor fusion running in the WebView itself (JavaScript-side). Shows prediction technique for latency reduction.
+
+#### JoyShockMapper
+- **URL:** https://github.com/JibbSmart/JoyShockMapper
+- **Language:** C++ (MIT license), ~845 stars
+- **What:** Full gyro-aiming application. Flick stick algorithm, real-world calibration (mapping gyro DPS to actual physical rotation), multiple aim mode configurations.
+- **Relevant:** Real-world calibration approach and flick stick pattern for potential steer mode enhancement.
+
+#### AHRS Python Library
+- **URL:** https://github.com/Mayitzin/ahrs
+- **Language:** Python (MIT license), ~701 stars
+- **What:** 18 different attitude estimation algorithms implemented to match original paper equations. Madgwick, Mahony, EKF, UKF, QUEST, TRIAD, Davenport, AQUA, FAMC, Complementary, Fourati, etc.
+- **Relevant:** Algorithm comparison and prototyping. If we want to evaluate different fusion approaches before committing to a Kotlin implementation, prototype in Python first using this library.
+
+### Tier 3: Supplementary References
+
+| Project | URL | Why |
+|---------|-----|-----|
+| OpenHMD | github.com/OpenHMD/OpenHMD | HMD rotation tracking drivers (unmaintained, redirects to Monado) |
+| libsurvive | github.com/collabora/libsurvive | IMU-space tracking with external correction signals |
+| sensor-fusion-demo | github.com/apacha/sensor-fusion-demo | Android demo comparing Kalman vs complementary vs rotation vector |
+| madgwick.js | github.com/ZiCog/madgwick.js | JavaScript port of Madgwick/Mahony with THREE.js visualization |
+| sensor-polyfills | github.com/kenchris/sensor-polyfills | W3C Generic Sensor API polyfill for WebView compatibility |
+| magnetometer_calibration | github.com/nliaudat/magnetometer_calibration | Python ellipsoid fitting for mag calibration |
+| android-iio-sensors-hal | github.com/intel/android-iio-sensors-hal | Intel's Android sensor HAL with gyro bias calibration |
+
+### Recommended Porting Strategy
+
+Based on deep analysis of all three Tier 1 projects:
+
+1. **Gyro bias estimation**: Port from **x-io Fusion** — simplest, most elegant (76 lines of C). Detects stillness, runs low-pass filter on gyro to extract DC offset. Drop-in addition to our `IMUSensorManager`.
+
+2. **Player Space gyro mode**: Port from **GamepadMotionHelpers** — the `GetPlayerSpaceGyro()` function (~15 lines) is the single most impactful addition for gaming feel. Loose gravity-adjusted yaw + local pitch.
+
+3. **Acceleration rejection**: Port from **x-io Fusion** — prevents accelerometer from corrupting orientation during sharp movements. Hysteretic counter with recovery is robust and well-tested.
+
+4. **Adaptive calibration**: Port from **GamepadMotionHelpers** — the combined stillness + sensor fusion approach with confidence tracking and per-axis authority. More sophisticated than Fusion's bias module.
+
+5. **Filter architecture**: Reference **FSensor** — Android-native patterns for sensor registration, frequency-agnostic time constants, quaternion integration. Don't use the library directly (Apache Commons Math is heavy), but follow the patterns.
+
+6. **Don't port**: Kalman filter (Android's TYPE_ROTATION_VECTOR already does this in hardware), magnetometer calibration (not using mag currently), full AHRS with magnetometer (unnecessary complexity for our use case).
+
+## Appendix B: Research Sources
 
 - [Stanford EE267: 3-DOF Orientation Tracking with IMUs](https://stanford.edu/class/ee267/notes/ee267_notes_imu.pdf) — Comprehensive course notes on IMU orientation estimation
 - [Vuforia Device Tracking](https://developer.vuforia.com/library/vuforia-engine/environments/device-tracking/device-tracking/) — Vuforia's approach to 6DOF/3DOF tracking
@@ -768,7 +869,7 @@ Existing `start()` and `MotionData` payload remain unchanged — no breaking cha
 - [How IMU Sensor Fusion Works (SageMotion)](https://www.sagemotion.com/blog/how-does-imu-sensor-fusion-work) — Practical sensor fusion overview
 - [Using Tilt as a Game Interface](https://dl.acm.org/doi/10.1145/1394021.1394031) — UX research on tilt controls for mobile games
 
-## Appendix B: Vivarium Source Files Referenced
+## Appendix C: Vivarium Source Files Referenced
 
 - `GyroInputProvider.cs` — Gravity-based 2D tilt with atan2 decomposition, Z-compensation, rest detection, auto-recalibration
 - `AttitudeInputProvider.cs` — Quaternion-based 3DOF look with canonical frame preservation
