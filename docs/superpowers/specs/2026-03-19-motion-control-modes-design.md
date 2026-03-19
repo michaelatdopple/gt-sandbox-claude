@@ -60,7 +60,7 @@ Loop.motion.getStatus(): MotionStatus
 
 **Constraints:**
 - Only one mode controller active at a time. Starting a new mode stops the previous one automatically. The developer does not need to call `stop()` first, but it is not an error to do so.
-- `raw()` is an alias for the existing `start()` method, which remains for backwards compatibility. Multiple raw subscriptions are still allowed (existing behavior).
+- `raw()` is an alias for the existing `start()` method, which remains for backwards compatibility. Multiple raw subscriptions are still allowed (existing behavior). Raw subscriptions do NOT participate in the one-mode-at-a-time constraint — starting a mode controller does not stop existing raw subscriptions, and vice versa. `raw()` returns a `MotionSubscription` (existing type), not a `MotionController`.
 - `stopAll()` stops both mode controllers and raw subscriptions.
 
 ## 5. Mode Definitions
@@ -200,8 +200,10 @@ interface TiltOptions {
    *  @default 60 */
   frequency?: number;
 
-  /** Gravity smoothing factor. 0.0 = maximum smoothing (laggy but stable),
+  /** Gravity smoothing factor (EMA alpha). 0.0 = maximum smoothing (laggy but stable),
    *  1.0 = no smoothing (responsive but jittery). Lower if input feels noisy.
+   *  NOTE: This is an EMA alpha value — lower = more smoothing, higher = less.
+   *  This matches the existing Loop.motion.start() smoothing parameter convention.
    *  @default 0.1 */
   smoothing?: number;
 
@@ -211,6 +213,9 @@ interface TiltOptions {
   maxAngle?: number;
 
   /** Ignore tilt below this many degrees. Prevents jitter at rest.
+   *  Uses remapped deadzone: values below the threshold are zero, values above
+   *  are linearly rescaled so the output still reaches ±1 smoothly (no jump
+   *  at the deadzone boundary). Applied to X and Y independently.
    *  Set to 0 to disable.
    *  @default 2 */
   deadzone?: number;
@@ -294,7 +299,7 @@ Note: `sensitivity` is `{ x, y }` for 2D modes (tilt, look) but a single `number
 All mode controllers (tilt, look, rotate) implement a shared base interface:
 
 ```typescript
-interface MotionController extends EventTarget {
+interface MotionController {
   /** Which mode this controller is running */
   readonly mode: 'tilt' | 'look' | 'rotate';
 
@@ -303,6 +308,10 @@ interface MotionController extends EventTarget {
 
   /** True while the controller is active (false after stop()) */
   readonly active: boolean;
+
+  /** The most recent input value, or null before calibration completes.
+   *  Useful for polling in render loops instead of caching event values. */
+  readonly lastInput: TiltInput | LookInput | RotateInput | null;
 
   /** Re-run calibration from the current device position.
    *  Input continues flowing using the old reference during recalibration.
@@ -342,6 +351,7 @@ Each concrete controller type (`TiltController`, `LookController`, `RotateContro
 ```
 Loop.motion.tilt(opts)
   → Promise resolves immediately with TiltController
+    (controller is in calibrating state: calibrated=false, active=true)
   → Internally: raw subscription created, calibration begins
   → ~750ms: calibration completes (15 frames skipped + 30 frames averaged at 60Hz)
   → 'calibrated' event fires (optional — most games don't listen for this)
@@ -351,15 +361,27 @@ Loop.motion.tilt(opts)
   → Internal raw subscription cleaned up, events stop
 ```
 
+The promise resolves as soon as the controller is constructed and the internal raw subscription is established. Calibration proceeds asynchronously. Input events do not fire until calibration completes. This means `await Loop.motion.tilt()` returns near-instantly — the ~750ms calibration happens in the background while the game finishes setup.
+
 ### Behavioral details
 
 **Handler registration during calibration:** The handler is stored but no events fire. The first `input` event arrives after calibration completes. No errors, no special handling needed by the developer.
 
 **Starting a new mode while one is active:** The previous controller is stopped automatically. Only one mode at a time. Example: calling `Loop.motion.look()` while a `TiltController` is active stops the tilt controller, then starts look.
 
-**Recalibration during active input:** Input continues flowing with the *old* reference during the recalibration window (~500ms for 30 frames at 60Hz). When the new reference is established, input transitions to the new reference. There is no gap or discontinuity. The `calibrated` event fires again.
+**Recalibration during active input:** Input continues flowing with the *old* reference during the recalibration window. `recalibrate()` skips the skip phase (sensor is already warmed up) and runs only the 30-frame collection phase (~500ms at 60Hz). When the new reference is established, input transitions to the new reference. There is no gap or discontinuity. The `calibrated` event fires again.
 
 **Auto-recalibration pause/resume:** `pauseRecalibration()` freezes the neutral reference in place. Useful for "hold the device at this angle to select" interactions where drift correction would fight the user. `resumeRecalibration()` re-enables adaptive correction.
+
+## 8.5 Error States
+
+**`isSupported()` returns false but mode method called:** The promise rejects with an error: `"Motion sensors not available on this device"`. Games should check `isSupported()` first, but the rejection provides a clear diagnostic.
+
+**Frequency out of range (1-240 Hz):** Clamped silently to the valid range. Matches existing `start()` behavior.
+
+**Activity pauses (Android lifecycle):** The native `IMUSensorManager` unregisters sensors on pause and re-registers on resume. The JS controller stays alive but receives no events during pause. On resume, sensor data resumes flowing. If `autoRecalibrate` is enabled, the rest-detection fast rate (3.0/sec) will quickly re-center the reference since the user's wrist position likely shifted. If `autoRecalibrate` is disabled, the game should call `recalibrate()` on resume if position accuracy matters.
+
+**Sensor becomes unavailable mid-session:** This is extremely rare on Loop hardware (sensors are always present). If it happens, the controller stops receiving events. No error event is emitted — the game simply stops getting `input` callbacks. `getStatus()` can be polled to detect this.
 
 ## 9. Calibration Strategy
 
@@ -383,8 +405,8 @@ After calibration, the reference is continuously adjusted to track the user's na
   - `atRest` → fast rate (3.0 corrections/sec) — during natural pauses, snap quickly
   - Near center (low magnitude) → moderate rate (proportional to centrality)
   - Full tilt (high magnitude) → frozen rate (0.02/sec) — never fight active input
-- **Interpolation method** depends on mode:
-  - Gravity reference: `reference = lerp(reference, current, deltaTime * rate)`
+- **Interpolation method** depends on mode (both use frame-rate-independent exponential decay):
+  - Gravity reference: `reference = lerp(reference, current, 1 - exp(-rate * deltaTime))`
   - Quaternion reference: `reference = slerp(reference, current, 1 - exp(-rate * deltaTime))`
 
 ### Explicit recalibration
@@ -541,6 +563,7 @@ The processing algorithms in the mode controllers are ported from three sources:
 - **Native-side processing** — all mode logic in JS for iteration speed and 3P debuggability. Can be moved to Kotlin later if profiling justifies it.
 - **Magnetometer** — Loop hardware doesn't reliably expose it; not needed for current use cases.
 - **Custom Kalman filter** — Android's `TYPE_ROTATION_VECTOR` already provides hardware-fused orientation via an on-chip Kalman filter. Running another one on top would add latency with marginal accuracy benefit.
+- **x-io Fusion gyro bias estimation and acceleration rejection** — referenced in Section 12 as prior art. These algorithms are designed for raw IMU fusion (building orientation from scratch). Since we use Android's `TYPE_ROTATION_VECTOR` (hardware-fused), gyro bias is already handled. These remain reference material for a potential future native-side processing path, not initial implementation scope.
 - **Motion prediction** — extrapolating orientation ahead by a few ms to reduce perceived latency. Valuable for VR headsets (20ms+ display latency) but unnecessary for Loop's direct-to-WebView pipeline (8.67ms P50).
 
 ## 14. Example Usage
