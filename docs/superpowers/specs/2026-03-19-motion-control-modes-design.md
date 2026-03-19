@@ -411,7 +411,7 @@ After calibration, the reference is continuously adjusted to track the user's na
 
 ### Explicit recalibration
 
-Games can trigger recalibration via `controller.recalibrate()`. This re-runs the full three-phase calibration from scratch. A common pattern:
+Games can trigger recalibration via `controller.recalibrate()`. This re-runs the collection phase (skip phase is omitted since the sensor is already warmed up), taking ~500ms at 60Hz. A common pattern:
 
 ```typescript
 Loop.buttons.on('B', () => controller.recalibrate());
