@@ -1,5 +1,9 @@
 // Bridge contract: see bridge-contract.yaml for the API surface map
 import type { Loop$motion, Loop$buttons, Loop$haptics, Loop$match, Loop$pack, Loop$ble, Loop$storage, Loop$system } from './generated/bridge-types';
+import { TiltController } from './motion/tilt-controller';
+import { LookController } from './motion/look-controller';
+import { RotateController } from './motion/rotate-controller';
+import type { TiltOptions, LookOptions, RotateOptions, MotionController } from './motion/types';
 /**
  * Loop SDK - Professional WebView Bridge for Game Developers
  *
@@ -188,6 +192,7 @@ class MotionSubscription extends EventTarget {
 const MotionAPI = {
     _subscriptions: new Map<string, MotionSubscription>(),
     _globalListener: null as ((e: Event) => void) | null,
+    _activeController: null as MotionController | null,
 
     /**
      * Check if motion sensors are supported on this device.
@@ -274,9 +279,107 @@ const MotionAPI = {
     },
 
     /**
+     * Start tilt mode — gravity-based 2D joystick.
+     */
+    async tilt(options: TiltOptions = {}): Promise<TiltController> {
+        if (!this.isSupported()) {
+            throw new Error('Motion sensors not available on this device');
+        }
+        this._activeController?.stop();
+        const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
+        const ctrl = new TiltController({ ...options, frequency: freq });
+        this._activeController = ctrl as unknown as MotionController;
+        // Start internal raw subscription
+        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
+        sub.on('data', (data: any) => ctrl['processFrame'](data));
+        // Wire stop to cleanup
+        const origStop = ctrl.stop.bind(ctrl);
+        ctrl.stop = () => {
+            origStop();
+            sub.stop();
+            if (this._activeController === (ctrl as unknown as MotionController)) {
+                this._activeController = null;
+            }
+        };
+        return ctrl;
+    },
+
+    /**
+     * Start look mode — quaternion-based panoramic view.
+     */
+    async look(options: LookOptions = {}): Promise<LookController> {
+        if (!this.isSupported()) {
+            throw new Error('Motion sensors not available on this device');
+        }
+        this._activeController?.stop();
+        const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
+        // Switch sensor fusion if needed
+        if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
+            native.motion.setSensorFusion(options.sensorFusion);
+        }
+        const ctrl = new LookController({ ...options, frequency: freq });
+        this._activeController = ctrl as unknown as MotionController;
+        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
+        sub.on('data', (data: any) => ctrl['processFrame'](data));
+        const origStop = ctrl.stop.bind(ctrl);
+        ctrl.stop = () => {
+            origStop();
+            sub.stop();
+            // Restore default sensor fusion
+            if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
+                native.motion.setSensorFusion('game');
+            }
+            if (this._activeController === (ctrl as unknown as MotionController)) {
+                this._activeController = null;
+            }
+        };
+        return ctrl;
+    },
+
+    /**
+     * Start rotate mode — single-axis rotation.
+     */
+    async rotate(options: RotateOptions = {}): Promise<RotateController> {
+        if (!this.isSupported()) {
+            throw new Error('Motion sensors not available on this device');
+        }
+        this._activeController?.stop();
+        const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
+        // Switch sensor fusion for turn axis
+        if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
+            native.motion.setSensorFusion(options.sensorFusion);
+        }
+        const ctrl = new RotateController({ ...options, frequency: freq });
+        this._activeController = ctrl as unknown as MotionController;
+        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
+        sub.on('data', (data: any) => ctrl['processFrame'](data));
+        const origStop = ctrl.stop.bind(ctrl);
+        ctrl.stop = () => {
+            origStop();
+            sub.stop();
+            if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
+                native.motion.setSensorFusion('game');
+            }
+            if (this._activeController === (ctrl as unknown as MotionController)) {
+                this._activeController = null;
+            }
+        };
+        return ctrl;
+    },
+
+    /**
+     * Start raw motion data subscription (alias for start).
+     */
+    async raw(options: MotionStartOptions = {}): Promise<MotionSubscription> {
+        return this.start(options);
+    },
+
+    /**
      * Stop all active subscriptions.
      */
     stopAll(): void {
+        this._activeController?.stop();
+        this._activeController = null;
         for (const sub of this._subscriptions.values()) {
             sub.stop();
         }
