@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-19-motion-control-modes-design.md`
 
+**Working directory:** All `sdk/` paths are relative to the native_webview rig root (`~/gt/native_webview/`). Kotlin files live in `dopple_android/` (separate repo). The SDK Explorer lives in this project's `app/src/main/assets/games/` directory.
+
 ---
 
 ## File Structure
@@ -51,7 +53,7 @@
 
 | File | Responsibility |
 |---|---|
-| `app/src/main/assets/games/sdk-explorer/index.html` | Single-page explorer app |
+| `app/src/main/assets/games/sdk-explorer/index.html` | Single-page explorer app (spec Section 15.4 defines multi-file structure; collapsed to single HTML for WebView game convention — all JS is inline) |
 | `app/src/main/assets/games/sdk-explorer/manifest.json` | Game manifest for gallery |
 
 ### Test approach
@@ -683,6 +685,7 @@ export class TiltProcessor {
     this.zAngle = Math.atan2(gravity.x, -gravity.y);
   }
 
+  /** @param gravity Use MotionData.smoothGravity (low-pass filtered) per spec Section 5.1 */
   process(gravity: Vector3, atRest: boolean, timestamp: number): TiltInput {
     // Compute tilt angles using atan2
     const currentAngleX = Math.atan2(gravity.x, -gravity.z) * (180 / Math.PI);
@@ -1052,6 +1055,14 @@ Add to `MotionAPI` object:
 
 The mode methods enforce one-mode-at-a-time by calling `_activeController?.stop()` before creating a new controller. Raw subscriptions are NOT affected (they don't participate in the constraint).
 
+Error handling (spec Section 8.5):
+- If `isSupported()` returns false, mode methods must reject with `"Motion sensors not available on this device"`
+- Frequency option is clamped to 1–240 Hz range (silent clamp, no error)
+- Wire `Loop.system.on('pause')` to call `_activeController?.pause()` and `on('resume')` to call `_activeController?.resume()`
+
+Update `stopAll()` to also stop the active mode controller:
+- `stopAll()` must call `_activeController?.stop()` in addition to stopping raw subscriptions
+
 - [ ] **Step 2: Build SDK**
 
 Run: `npm run build:sdk`
@@ -1340,4 +1351,4 @@ Phase 6: Explorer Dashboard(17) → Mode Testers(18) → Tuning(19)   [after Pha
 Phase 7: E2E Testing(20)                                           [after all]
 ```
 
-Tasks 1-5 are sequential (each builds on prior). Tasks 6-8 depend on 1-5 but are independent of each other. Tasks 9-12 depend on 6-8. Task 13 is independent of all JS work. Task 16 is independent of all JS work (can run in parallel). Tasks 17-19 depend on 14.
+Task 1 (types) is the foundation. Tasks 2-5 depend only on Task 1 and are independent of each other (can parallel). Tasks 6-8 depend on Task 1 and Task 5 (deadzone) but are independent of each other. Tasks 9-12 depend on their respective processors (6-8). Task 13 is independent of all JS work. Task 16 is independent of all JS work (can parallel with Phases 2-3). Tasks 17-19 depend on 14.
