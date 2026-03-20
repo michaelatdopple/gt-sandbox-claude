@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/galleryFragment">
+
+    <!-- Gallery - Home screen (React WebView) -->
+    <fragment
+        android:id="@+id/galleryFragment"
+        android:name="com.dopple.webview.ui.gallery.GalleryWebViewFragment"
+        android:label="Gallery"
+        tools:layout="@layout/fragment_gallery_webview">
+
+        <argument
+            android:name="scrollToIndex"
+            app:argType="integer"
+            android:defaultValue="-1" />
+    </fragment>
+
+    <!-- Game Fragment - WebView for games and activities -->
+    <fragment
+        android:id="@+id/gameFragment"
+        android:name="com.dopple.webview.ui.game.GameFragment"
+        android:label="Game"
+        tools:layout="@layout/fragment_game">
+
+        <argument
+            android:name="manifestUrl"
+            app:argType="string" />
+    </fragment>
+
+    <!-- BLE Test Fragment - for device-to-device testing -->
+    <fragment
+        android:id="@+id/bleTestFragment"
+        android:name="com.dopple.webview.ui.test.BleTestFragment"
+        android:label="BLE Test"
+        tools:layout="@layout/fragment_ble_test">
+
+        <argument
+            android:name="role"
+            app:argType="string"
+            android:defaultValue="client" />
+
+        <argument
+            android:name="scenario"
+            app:argType="string"
+            android:defaultValue="default" />
+
+        <deepLink
+            android:id="@+id/deepLink_ble_test"
+            app:uri="dopple://test/ble?role={role}&amp;scenario={scenario}" />
+    </fragment>
+
+    <!-- Love2D Game Fragment - Love2D runtime for games -->
+    <fragment
+        android:id="@+id/love2dGameFragment"
+        android:name="com.dopple.webview.ui.love.Love2dGameFragment"
+        android:label="Love2D Game"
+        tools:layout="@layout/fragment_love2d_game">
+
+        <argument
+            android:name="manifestUrl"
+            app:argType="string" />
+    </fragment>
+
+</navigation>

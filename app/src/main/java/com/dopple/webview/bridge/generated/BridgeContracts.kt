@@ -14,7 +14,6 @@ interface IMUNamespaceContract {
     @JavascriptInterface fun getStatus(): String
     @JavascriptInterface fun getLatest(): String?
     @JavascriptInterface fun getSensorAvailability(): String
-    @JavascriptInterface fun setSensorFusion(type: String): Boolean
 }
 
 interface ButtonNamespaceContract  // empty — no native methods

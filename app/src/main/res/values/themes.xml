@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.DoppleWebView" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_variant</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorSecondaryVariant">@color/secondary_variant</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color - transparent for fullscreen circular display -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- Navigation bar color - transparent for fullscreen circular display -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Window background -->
+        <item name="android:windowBackground">@color/black</item>
+        <!-- Fullscreen flags for 800x800 circular display -->
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <!-- Extend content into display cutout area for 800x800 circular display -->
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <!-- Do not translate content for system bars -->
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+    </style>
+</resources>

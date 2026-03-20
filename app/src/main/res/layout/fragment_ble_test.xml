@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="24dp"
+    tools:context=".ui.test.BleTestFragment">
+
+    <!-- Role indicator -->
+    <TextView
+        android:id="@+id/role_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="#00FF00"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:layout_marginTop="40dp"
+        tools:text="HOST" />
+
+    <!-- Current status -->
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        tools:text="Waiting for connection..." />
+
+    <!-- Test results section -->
+    <LinearLayout
+        android:id="@+id/results_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="32dp"
+        android:paddingHorizontal="16dp">
+
+        <TextView
+            android:id="@+id/phase1_result"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#888888"
+            android:textSize="16sp"
+            android:text="@string/ble_phase1_pending" />
+
+        <TextView
+            android:id="@+id/phase2_result"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#888888"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            android:text="@string/ble_phase2_pending" />
+
+        <TextView
+            android:id="@+id/phase3_result"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#888888"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            android:text="@string/ble_phase3_pending" />
+
+    </LinearLayout>
+
+    <!-- Final result -->
+    <TextView
+        android:id="@+id/final_result"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@android:color/white"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp"
+        android:visibility="gone"
+        tools:text="TEST PASSED" />
+
+</LinearLayout>

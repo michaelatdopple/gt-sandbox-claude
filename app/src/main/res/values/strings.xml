@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dopple WebView</string>
+
+    <!-- Scanner -->
+    <string name="scanner_status_hint">[A] TAP TO EXIT</string>
+
+    <!-- BLE Test (debug UI) -->
+    <string name="ble_phase1_pending">Phase 1: Connection - PENDING</string>
+    <string name="ble_phase2_pending">Phase 2: Messages - PENDING</string>
+    <string name="ble_phase3_pending">Phase 3: Disconnect - PENDING</string>
+
+    <!-- Game -->
+    <string name="loading_ellipsis">LOADING…</string>
+</resources>
