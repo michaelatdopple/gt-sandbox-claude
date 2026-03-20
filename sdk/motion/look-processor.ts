@@ -4,7 +4,6 @@ import { applyDeadzone } from './deadzone';
 const DEG = 180 / Math.PI;
 
 export class LookProcessor {
-  private refQuat: Quaternion = { x: 0, y: 0, z: 0, w: 1 };
   private refInverse: Quaternion = { x: 0, y: 0, z: 0, w: 1 };
   private maxAngle: number;
   private deadzone: number;
@@ -17,7 +16,6 @@ export class LookProcessor {
   }
 
   setReference(quat: Quaternion): void {
-    this.refQuat = { ...quat };
     // Inverse of unit quaternion = conjugate
     this.refInverse = { x: -quat.x, y: -quat.y, z: -quat.z, w: quat.w };
   }

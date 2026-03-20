@@ -1,4 +1,4 @@
-import type { Vector3, Quaternion, RotateAxis, RotateInput } from './types';
+import type { Vector3, RotateAxis, RotateInput } from './types';
 import { applyDeadzone } from './deadzone';
 
 // Normalize axis aliases

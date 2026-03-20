@@ -6,7 +6,7 @@ const COLLECT_FRAMES = 30;
 export type CalibratorMode = 'vector' | 'quaternion';
 
 export class Calibrator {
-  private mode: CalibratorMode;
+  readonly mode: CalibratorMode;
   private skipCount = 0;
   private collectCount = 0;
   private skipPhase: boolean;
