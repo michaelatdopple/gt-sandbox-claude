@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/cardcarousel.tsx","./src/components/cartridgecard.tsx","./src/components/powerbar.tsx","./src/components/scanlineoverlay.tsx","./src/hooks/usegallerybridge.ts","./src/hooks/useholddetector.ts","./src/types/gallery-bridge.d.ts","../types/loop-sdk.d.ts","../types/internal-sdk.d.ts"],"version":"5.9.3"}
