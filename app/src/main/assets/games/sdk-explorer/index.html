@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=800, initial-scale=1.0, user-scalable=no">
+  <title>SDK Explorer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Courier New', 'Courier', monospace;
+      background: #080812;
+      color: #eee;
+      width: 800px;
+      height: 800px;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Tab bar */
+    #tab-bar {
+      display: flex;
+      width: 800px;
+      height: 64px;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+      background: rgba(0,0,0,0.4);
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      width: 160px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      color: #668899;
+      border: none;
+      background: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .tab-btn.active {
+      color: #00d4ff;
+      border-bottom-color: #00d4ff;
+    }
+
+    /* Content area */
+    #content {
+      width: 800px;
+      height: 736px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    section {
+      display: none;
+      width: 800px;
+      height: 736px;
+      position: absolute;
+      top: 0; left: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px;
+    }
+
+    section.active { display: block; }
+
+    /* Placeholder tabs */
+    .placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      font-size: 32px;
+      color: #668899;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Dashboard panels */
+    .panel {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: 30px;
+      font-weight: bold;
+      color: #00d4ff;
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Quaternion row */
+    .quat-row {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+    }
+
+    .quat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+    }
+
+    .quat-label {
+      font-size: 24px;
+      color: #668899;
+      margin-bottom: 2px;
+    }
+
+    .quat-value {
+      font-size: 48px;
+      color: #00d4ff;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      min-width: 0;
+      text-align: center;
+    }
+
+    /* Top row: sphere + rest indicator + frame rate */
+    .top-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .sphere-panel {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .sphere-panel .panel-title {
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+
+    .side-panels {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .rest-panel {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+
+    .rest-dot {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: #00cc44;
+      box-shadow: 0 0 20px rgba(0,204,68,0.6), 0 0 40px rgba(0,204,68,0.3);
+      transition: background 0.15s, box-shadow 0.15s;
+      margin-bottom: 6px;
+    }
+
+    .rest-dot.moving {
+      background: #ff3344;
+      box-shadow: 0 0 20px rgba(255,51,68,0.6), 0 0 40px rgba(255,51,68,0.3);
+    }
+
+    .rest-label {
+      font-size: 24px;
+      color: #668899;
+    }
+
+    .hz-panel {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+
+    #hz-value {
+      font-size: 72px;
+      font-weight: bold;
+      color: #00d4ff;
+      font-family: 'Courier New', monospace;
+      line-height: 1;
+    }
+
+    .hz-label {
+      font-size: 24px;
+      color: #668899;
+    }
+
+    /* Calibration */
+    #calib-text {
+      font-size: 28px;
+      color: #00d4ff;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Strip chart */
+    #strip-chart {
+      display: block;
+      width: 100%;
+      height: 80px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Tab bar -->
+<div id="tab-bar">
+  <button class="tab-btn active" data-tab="dashboard">DASH</button>
+  <button class="tab-btn" data-tab="tilt">TILT</button>
+  <button class="tab-btn" data-tab="look">LOOK</button>
+  <button class="tab-btn" data-tab="rotate">ROTATE</button>
+  <button class="tab-btn" data-tab="tune">TUNE</button>
+</div>
+
+<!-- Content -->
+<div id="content">
+
+  <!-- Dashboard -->
+  <section id="tab-dashboard" class="active">
+
+    <!-- Top row: sphere + rest + hz -->
+    <div class="top-row">
+      <!-- Gravity sphere -->
+      <div class="sphere-panel">
+        <div class="panel-title">GRAVITY</div>
+        <canvas id="sphere-canvas" width="220" height="220"></canvas>
+      </div>
+
+      <!-- Side: rest + hz -->
+      <div class="side-panels">
+        <div class="rest-panel">
+          <div id="rest-dot" class="rest-dot"></div>
+          <div id="rest-label" class="rest-label">AT REST</div>
+        </div>
+        <div class="hz-panel">
+          <div id="hz-value">--</div>
+          <div class="hz-label">Hz</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quaternion -->
+    <div class="panel">
+      <div class="panel-title">ORIENTATION (QUAT)</div>
+      <div class="quat-row">
+        <div class="quat-item">
+          <div class="quat-label">X</div>
+          <div class="quat-value" id="qx">0.000</div>
+        </div>
+        <div class="quat-item">
+          <div class="quat-label">Y</div>
+          <div class="quat-value" id="qy">0.000</div>
+        </div>
+        <div class="quat-item">
+          <div class="quat-label">Z</div>
+          <div class="quat-value" id="qz">0.000</div>
+        </div>
+        <div class="quat-item">
+          <div class="quat-label">W</div>
+          <div class="quat-value" id="qw">1.000</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Angular velocity strip chart -->
+    <div class="panel">
+      <div class="panel-title">ANGULAR VELOCITY</div>
+      <canvas id="strip-chart" width="752" height="80"></canvas>
+    </div>
+
+    <!-- Calibration -->
+    <div class="panel">
+      <div class="panel-title">CALIBRATION</div>
+      <div id="calib-text">Waiting for data...</div>
+    </div>
+
+  </section>
+
+  <!-- Tilt -->
+  <section id="tab-tilt">
+    <div class="placeholder">Tilt tester — coming soon</div>
+  </section>
+
+  <!-- Look -->
+  <section id="tab-look">
+    <div class="placeholder">Look tester — coming soon</div>
+  </section>
+
+  <!-- Rotate -->
+  <section id="tab-rotate">
+    <div class="placeholder">Rotate tester — coming soon</div>
+  </section>
+
+  <!-- Tune -->
+  <section id="tab-tune">
+    <div class="placeholder">Tuning engine — coming soon</div>
+  </section>
+
+</div>
+
+<script>
+// ─── Tab navigation ───────────────────────────────────────────────────────────
+
+const TABS = ['dashboard', 'tilt', 'look', 'rotate', 'tune'];
+let currentTabIdx = 0;
+
+function setTab(name) {
+  const idx = TABS.indexOf(name);
+  if (idx < 0) return;
+  currentTabIdx = idx;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === name);
+  });
+  document.querySelectorAll('#content section').forEach(sec => {
+    sec.classList.toggle('active', sec.id === 'tab-' + name);
+  });
+
+  if (typeof Loop !== 'undefined' && Loop.haptics) {
+    Loop.haptics.pulse();
+  }
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => setTab(btn.dataset.tab));
+});
+
+// B button cycles tabs
+function setupButtons() {
+  if (typeof Loop === 'undefined' || !Loop.buttons) return;
+  Loop.buttons.on('B', () => {
+    currentTabIdx = (currentTabIdx + 1) % TABS.length;
+    setTab(TABS[currentTabIdx]);
+  });
+}
+
+// ─── Sphere canvas setup ──────────────────────────────────────────────────────
+
+const sphereCanvas = document.getElementById('sphere-canvas');
+const sCtx = sphereCanvas.getContext('2d');
+const SW = 220, SH = 220;
+const sCX = SW / 2, sCY = SH / 2;
+const SR = 90; // sphere radius
+
+// ─── Strip chart setup ────────────────────────────────────────────────────────
+
+const stripCanvas = document.getElementById('strip-chart');
+const rCtx = stripCanvas.getContext('2d');
+const STRIP_W = 752, STRIP_H = 80;
+const MAX_SAMPLES = 100;
+const angVelBuffer = new Float32Array(MAX_SAMPLES);
+let angVelHead = 0;
+let angVelMax = 0.01; // dynamic scale
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let quat = { x: 0, y: 0, z: 0, w: 1 };
+let gravVec = { x: 0, y: -1, z: 0 };
+let isMoving = false;
+let calibStatus = 'Waiting for data...';
+
+// Frame rate tracking
+const frameTimes = new Float64Array(60);
+let frameHead = 0;
+let frameCount = 0;
+
+// ─── Motion data handler ──────────────────────────────────────────────────────
+
+function onMotion(data) {
+  // Record frame time
+  const now = performance.now();
+  frameTimes[frameHead % 60] = now;
+  frameHead++;
+  frameCount++;
+
+  // Parse orientation quaternion
+  if (data.orientation) {
+    quat.x = data.orientation.x || 0;
+    quat.y = data.orientation.y || 0;
+    quat.z = data.orientation.z || 0;
+    quat.w = data.orientation.w !== undefined ? data.orientation.w : 1;
+  }
+
+  // Parse gravity vector
+  if (data.gravity) {
+    gravVec.x = data.gravity.x || 0;
+    gravVec.y = data.gravity.y || 0;
+    gravVec.z = data.gravity.z || 0;
+    // Normalize
+    const gLen = Math.sqrt(gravVec.x*gravVec.x + gravVec.y*gravVec.y + gravVec.z*gravVec.z);
+    if (gLen > 0.001) {
+      gravVec.x /= gLen;
+      gravVec.y /= gLen;
+      gravVec.z /= gLen;
+    }
+  } else if (data.orientation) {
+    // Derive gravity from quaternion: rotate (0, -1, 0) by quat
+    const { x, y, z, w } = quat;
+    // Rotate vector (0,-1,0) by quaternion
+    // gx = 2*(x*y - w*z)
+    // gy = 1 - 2*(x*x + z*z)   → negate since gravity pulls down
+    // gz = 2*(y*z + w*x)
+    gravVec.x = 2*(x*y - w*z);
+    gravVec.y = 1 - 2*(x*x + z*z);
+    gravVec.z = 2*(y*z + w*x);
+    // This gives us "down" direction in device space
+    gravVec.y = -gravVec.y;
+  }
+
+  // Angular velocity / delta magnitude
+  let deltaMag = 0;
+  if (data.delta) {
+    const dx = data.delta.x || 0;
+    const dy = data.delta.y || 0;
+    const dz = data.delta.z || 0;
+    deltaMag = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  } else if (data.gyro) {
+    const gx = data.gyro.x || 0;
+    const gy = data.gyro.y || 0;
+    const gz = data.gyro.z || 0;
+    deltaMag = Math.sqrt(gx*gx + gy*gy + gz*gz);
+  }
+
+  // Push to buffer
+  angVelBuffer[angVelHead % MAX_SAMPLES] = deltaMag;
+  angVelHead++;
+  if (deltaMag > angVelMax) angVelMax = deltaMag;
+
+  // Rest state: threshold ~0.05 rad/s
+  isMoving = deltaMag > 0.05;
+
+  // Calibration
+  if (data.calibration !== undefined) {
+    const c = data.calibration;
+    if (c >= 3) calibStatus = 'Fully calibrated';
+    else if (c >= 2) calibStatus = 'Good calibration (' + c + '/3)';
+    else if (c >= 1) calibStatus = 'Calibrating... (' + c + '/3)';
+    else calibStatus = 'Uncalibrated — move device';
+  } else {
+    calibStatus = 'Data flowing';
+  }
+}
+
+// ─── Draw: gravity sphere ─────────────────────────────────────────────────────
+
+function drawSphere() {
+  sCtx.clearRect(0, 0, SW, SH);
+
+  // Sphere body
+  const gradient = sCtx.createRadialGradient(sCX - 20, sCY - 20, 5, sCX, sCY, SR);
+  gradient.addColorStop(0, 'rgba(0,100,120,0.9)');
+  gradient.addColorStop(1, 'rgba(0,20,30,0.95)');
+  sCtx.beginPath();
+  sCtx.arc(sCX, sCY, SR, 0, Math.PI * 2);
+  sCtx.fillStyle = gradient;
+  sCtx.fill();
+
+  // Grid lines on sphere (latitude/longitude wireframe)
+  sCtx.strokeStyle = 'rgba(0,212,255,0.15)';
+  sCtx.lineWidth = 1;
+
+  // Isometric axis hint lines
+  for (let i = -2; i <= 2; i++) {
+    const t = i / 2;
+    const fy = t * SR;
+    const rx = Math.sqrt(Math.max(0, SR*SR - fy*fy));
+    // Horizontal ellipse
+    sCtx.beginPath();
+    sCtx.ellipse(sCX, sCY + fy * 0.5, rx, rx * 0.35, 0, 0, Math.PI * 2);
+    sCtx.stroke();
+  }
+
+  // Vertical great circle (isometric)
+  sCtx.beginPath();
+  sCtx.ellipse(sCX, sCY, SR * 0.35, SR, 0, 0, Math.PI * 2);
+  sCtx.stroke();
+
+  // Sphere outline
+  sCtx.beginPath();
+  sCtx.arc(sCX, sCY, SR, 0, Math.PI * 2);
+  sCtx.strokeStyle = 'rgba(0,212,255,0.4)';
+  sCtx.lineWidth = 1.5;
+  sCtx.stroke();
+
+  // Project gravity vector to isometric 2D
+  // gx, gy, gz → screen using iso projection
+  const gx = gravVec.x;
+  const gy = gravVec.y;
+  const gz = gravVec.z;
+
+  // Simple isometric: x maps to right, z maps to right-down, y maps to up
+  const isoSx = gx * SR - gz * SR * 0.5;
+  const isoSy = -gy * SR + gz * SR * 0.35;
+
+  // Arrow origin at center
+  const ax = sCX, ay = sCY;
+  const bx = sCX + isoSx, by = sCY + isoSy;
+
+  // Arrow shaft
+  sCtx.beginPath();
+  sCtx.moveTo(ax, ay);
+  sCtx.lineTo(bx, by);
+  sCtx.strokeStyle = '#00d4ff';
+  sCtx.lineWidth = 3;
+  sCtx.stroke();
+
+  // Arrowhead
+  const angle = Math.atan2(by - ay, bx - ax);
+  const headLen = 16;
+  sCtx.beginPath();
+  sCtx.moveTo(bx, by);
+  sCtx.lineTo(bx - headLen * Math.cos(angle - 0.4), by - headLen * Math.sin(angle - 0.4));
+  sCtx.lineTo(bx - headLen * Math.cos(angle + 0.4), by - headLen * Math.sin(angle + 0.4));
+  sCtx.closePath();
+  sCtx.fillStyle = '#00d4ff';
+  sCtx.fill();
+
+  // Center dot
+  sCtx.beginPath();
+  sCtx.arc(ax, ay, 4, 0, Math.PI * 2);
+  sCtx.fillStyle = 'rgba(0,212,255,0.5)';
+  sCtx.fill();
+
+  // Dot on sphere at arrow tip (only if within radius)
+  const dist = Math.sqrt(isoSx*isoSx + isoSy*isoSy);
+  if (dist > 0) {
+    sCtx.beginPath();
+    sCtx.arc(bx, by, 6, 0, Math.PI * 2);
+    sCtx.fillStyle = '#fff';
+    sCtx.fill();
+  }
+}
+
+// ─── Draw: strip chart ────────────────────────────────────────────────────────
+
+function drawStripChart() {
+  rCtx.clearRect(0, 0, STRIP_W, STRIP_H);
+
+  // Background
+  rCtx.fillStyle = 'rgba(0,0,0,0.3)';
+  rCtx.fillRect(0, 0, STRIP_W, STRIP_H);
+
+  // Grid lines
+  rCtx.strokeStyle = 'rgba(0,212,255,0.1)';
+  rCtx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const y = (i / 4) * STRIP_H;
+    rCtx.beginPath();
+    rCtx.moveTo(0, y);
+    rCtx.lineTo(STRIP_W, y);
+    rCtx.stroke();
+  }
+
+  // Slowly decay max for scale
+  angVelMax = Math.max(0.01, angVelMax * 0.999);
+
+  // Plot
+  const count = Math.min(angVelHead, MAX_SAMPLES);
+  if (count < 2) return;
+
+  rCtx.beginPath();
+  rCtx.strokeStyle = '#00d4ff';
+  rCtx.lineWidth = 2;
+
+  for (let i = 0; i < count; i++) {
+    // Most recent sample is at right
+    const idx = (angVelHead - count + i) % MAX_SAMPLES;
+    const val = angVelBuffer[(idx + MAX_SAMPLES) % MAX_SAMPLES];
+    const px = (i / (MAX_SAMPLES - 1)) * STRIP_W;
+    const py = STRIP_H - (val / angVelMax) * (STRIP_H - 4) - 2;
+
+    if (i === 0) rCtx.moveTo(px, py);
+    else rCtx.lineTo(px, py);
+  }
+  rCtx.stroke();
+
+  // Fill under
+  rCtx.lineTo(STRIP_W, STRIP_H);
+  rCtx.lineTo(0, STRIP_H);
+  rCtx.closePath();
+  rCtx.fillStyle = 'rgba(0,212,255,0.08)';
+  rCtx.fill();
+}
+
+// ─── Compute frame rate ───────────────────────────────────────────────────────
+
+function computeHz() {
+  if (frameCount < 2) return 0;
+  const samples = Math.min(frameCount, 60);
+  // Get the oldest and newest timestamps in rolling buffer
+  const newest = frameTimes[(frameHead - 1) % 60];
+  const oldest = frameTimes[(frameHead - samples + 60) % 60];
+  const elapsed = newest - oldest;
+  if (elapsed <= 0) return 0;
+  return Math.round((samples - 1) / elapsed * 1000);
+}
+
+// ─── Render loop ──────────────────────────────────────────────────────────────
+
+function render() {
+  // Update DOM
+  document.getElementById('qx').textContent = quat.x.toFixed(3);
+  document.getElementById('qy').textContent = quat.y.toFixed(3);
+  document.getElementById('qz').textContent = quat.z.toFixed(3);
+  document.getElementById('qw').textContent = quat.w.toFixed(3);
+
+  const restDot = document.getElementById('rest-dot');
+  const restLbl = document.getElementById('rest-label');
+  if (isMoving) {
+    restDot.classList.add('moving');
+    restLbl.textContent = 'MOVING';
+  } else {
+    restDot.classList.remove('moving');
+    restLbl.textContent = 'AT REST';
+  }
+
+  document.getElementById('hz-value').textContent = computeHz() || '--';
+  document.getElementById('calib-text').textContent = calibStatus;
+
+  // Draw canvases (always, even if not on dashboard — cheap)
+  drawSphere();
+  drawStripChart();
+
+  requestAnimationFrame(render);
+}
+
+// ─── Simulate data in browser (fallback) ─────────────────────────────────────
+
+let simTime = 0;
+function simulateMotion() {
+  simTime += 0.02;
+  const t = simTime;
+
+  // Fake slow rotation
+  const angle = t * 0.3;
+  const tilt = Math.sin(t * 0.2) * 0.4;
+
+  // Simulate quaternion from angle/tilt
+  const halfAngle = angle / 2;
+  const halfTilt = tilt / 2;
+  quat.x = Math.sin(halfTilt) * Math.cos(halfAngle);
+  quat.y = Math.cos(halfTilt) * Math.sin(halfAngle);
+  quat.z = Math.sin(halfTilt) * Math.sin(halfAngle);
+  quat.w = Math.cos(halfTilt) * Math.cos(halfAngle);
+
+  // Gravity from quat
+  const { x, y, z, w } = quat;
+  gravVec.x = 2*(x*y - w*z);
+  gravVec.y = -(1 - 2*(x*x + z*z));
+  gravVec.z = 2*(y*z + w*x);
+
+  // Fake angular velocity
+  const delta = Math.abs(Math.sin(t * 1.1)) * 0.1 + Math.random() * 0.02;
+  angVelBuffer[angVelHead % MAX_SAMPLES] = delta;
+  angVelHead++;
+  if (delta > angVelMax) angVelMax = delta;
+  isMoving = delta > 0.05;
+
+  // Fake frame time
+  frameTimes[frameHead % 60] = performance.now();
+  frameHead++;
+  frameCount++;
+
+  calibStatus = 'Simulation mode';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+function init() {
+  setupButtons();
+
+  if (typeof Loop !== 'undefined' && Loop.motion) {
+    // Real device
+    Loop.motion.start({ frequency: 60, smoothing: 0.1 }, onMotion);
+    calibStatus = 'Motion started...';
+  } else {
+    // Browser simulation
+    calibStatus = 'Simulation mode';
+    setInterval(simulateMotion, 16);
+  }
+
+  render();
+}
+
+// loop:ready gate with 500ms fallback
+if (typeof Loop !== 'undefined') {
+  document.addEventListener('loop:ready', init);
+  setTimeout(init, 500);
+} else {
+  // Pure browser
+  window.addEventListener('load', () => setTimeout(init, 100));
+}
+</script>
+</body>
+</html>
