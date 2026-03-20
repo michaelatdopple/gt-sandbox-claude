@@ -1,0 +1,229 @@
+# Bridge Contract — Single source of truth for the Loop SDK API surface.
+#
+# Three layers must stay in sync:
+#   TypeScript types  → types/loop-sdk.d.ts       (DX-first)
+#   JS SDK            → app/.../assets/loop-sdk.js (glue layer)
+#   Native bridge     → app/.../bridge/WebAppInterface.kt (Kotlin)
+#
+# Validated by: scripts/check-bridge-contract.mjs
+# Run manually:  node scripts/check-bridge-contract.mjs
+# Runs in CI and pre-commit hook when bridge files are staged.
+
+version: "1.4.0"
+
+namespaces:
+  motion:
+    scope: public
+    native: "Loop$motion"
+    kotlinClass: IMUNamespace
+    sdkExport: Loop.motion
+
+    nativeMethods:
+      subscribe:         { returns: String }
+      unsubscribe:       { params: [id: String], returns: Boolean }
+      setFrequency:      { params: [hz: Int], returns: Int }
+      setSmoothingAlpha: { params: [alpha: Float], returns: Float }
+      getStatus:         { returns: String }
+      getLatest:         { returns: "String?" }
+      getSensorAvailability: { returns: String }
+
+    sdkMethods:
+      start:
+        maps: [subscribe, setFrequency, setSmoothingAlpha]
+        note: "Orchestrates subscribe + optional frequency/smoothing"
+      isSupported:
+        maps: [getSensorAvailability]
+      setFrequency:
+        maps: [setFrequency]
+      setSmoothingAlpha:
+        maps: [setSmoothingAlpha]
+      getStatus:
+        maps: [getStatus]
+      getLatest:
+        maps: [getLatest]
+      stopAll:
+        maps: [unsubscribe]
+        note: "Iterates all active subscriptions"
+
+    events:
+      - "loop:motion"
+
+  buttons:
+    scope: public
+    native: "Loop$buttons"
+    kotlinClass: ButtonNamespace
+    sdkExport: Loop.buttons
+    nativeMethods: {}
+    sdkMethods:
+      on:  { maps: [], note: "Wraps addEventListener('loop:button')" }
+      off: { maps: [], note: "Wraps removeEventListener('loop:button')" }
+    events:
+      - "loop:button"
+
+  haptics:
+    scope: public
+    native: "Loop$haptics"
+    kotlinClass: HapticsNamespace
+    sdkExport: Loop.haptics
+
+    nativeMethods:
+      getStatus:   { returns: String }
+      pulse:       { params: [intensity: Float], returns: String }
+      playCurve:   { params: [curveJson: String], returns: String }
+      stop:        { returns: String }
+
+    sdkMethods:
+      isSupported: { maps: [getStatus], note: "Checks available field" }
+      getStatus:   { maps: [getStatus] }
+      pulse:       { maps: [pulse] }
+      playCurve:   { maps: [playCurve] }
+      stop:        { maps: [stop] }
+
+  match:
+    scope: public
+    native: "Loop$match"
+    kotlinClass: MatchNamespace
+    sdkExport: Loop.match
+
+    nativeMethods:
+      getStatus:    { returns: String }
+      isBusy:       { returns: Boolean }
+      captureFrame: { params: [requestId: Int, base64Image: String] }
+
+    sdkMethods:
+      getStatus:     { maps: [getStatus] }
+      isBusy:        { maps: [isBusy] }
+      captureFrame:  { maps: [captureFrame], note: "Canvas→base64→native" }
+    events:
+      - "loop:match"
+
+  pack:
+    scope: public
+    native: "Loop$pack"
+    kotlinClass: PackNamespace
+    sdkExport: Loop.pack
+
+    nativeMethods:
+      getStatus:   { returns: String }
+      getAsset:    { params: [packName: String, path: String], returns: String }
+      assetExists: { params: [packName: String, path: String], returns: Boolean }
+
+    sdkMethods:
+      getStatus:    { maps: [getStatus] }
+      getAsset:     { maps: [getAsset] }
+      getModelUrl:  { maps: [getAsset], note: "Wraps getAsset + blob URL" }
+      assetExists:  { maps: [assetExists] }
+      clearCache:   { maps: [], note: "JS-only, revokes blob URLs" }
+      getCacheSize: { maps: [], note: "JS-only, cache bookkeeping" }
+
+  manifest:
+    scope: public
+    native: "Loop$manifest"
+    kotlinClass: ManifestNamespace
+    sdkExport: null
+    nativeMethods:
+      load: { params: [url: String] }
+    sdkMethods: {}
+    events:
+      - "loop:manifest"
+      - "loop:manifest:progress"
+
+  gallery:
+    scope: internal
+    native: "Loop$gallery"
+    kotlinClass: GalleryNamespace
+    sdkExport: LoopInternal.gallery
+
+    nativeMethods:
+      getHistory:      { returns: String }
+      launchActivity:  { params: [manifestUrl: String] }
+      prepareScanner:  {}
+      openScanner:     {}
+      closeScanner:    {}
+
+    sdkMethods:
+      getHistory:      { maps: [getHistory], note: "Parses JSON to array" }
+      launchActivity:  { maps: [launchActivity] }
+      prepareScanner:  { maps: [prepareScanner] }
+      openScanner:     { maps: [openScanner] }
+      closeScanner:    { maps: [closeScanner] }
+
+    events: []
+
+  ble:
+    scope: public
+    native: "Loop$ble"
+    kotlinClass: BLENamespace
+    sdkExport: Loop.ble
+
+    nativeMethods:
+      createGame: { params: [gameId: String, token?: String], returns: String }
+      joinGame:   { params: [hostToken: String, playerName: String], returns: String }
+      playGame:   { params: [seed: String, playerName: String], returns: String }
+      getState:   { returns: String }
+      endGame:    {}
+      leaveGame:  {}
+      send:       { params: [dataJson: String, optionsJson: String], returns: String }
+
+    sdkMethods:
+      createGame: { maps: [createGame] }
+      joinGame:   { maps: [joinGame], note: "Promise wrapping + timeout" }
+      playGame:   { maps: [playGame], note: "Seed-based auto-role negotiation. JS adds options.timeoutMs (default 15s)" }
+      getState:   { maps: [getState], note: "Returns current BLE state string" }
+      endGame:    { maps: [endGame] }
+      leaveGame:  { maps: [leaveGame] }
+      send:       { maps: [send] }
+      on:         { maps: [], note: "Wraps addEventListener for loop:ble:*" }
+      off:        { maps: [], note: "Wraps removeEventListener for loop:ble:*" }
+    events:
+      - "loop:ble:message"
+      - "loop:ble:playerJoined"
+      - "loop:ble:playerLeft"
+      - "loop:ble:connected"
+      - "loop:ble:disconnected"
+      - "loop:ble:reconnecting"
+      - "loop:ble:roleResolved"
+
+  storage:
+    scope: public
+    native: "Loop$storage"
+    kotlinClass: StorageNamespace
+    sdkExport: Loop.storage
+
+    nativeMethods:
+      setItem:    { params: [key: String, value: String], returns: String }
+      getItem:    { params: [key: String], returns: "String?" }
+      removeItem: { params: [key: String], returns: String }
+      clear:      { returns: String }
+      keys:       { returns: String }
+      getUsage:   { returns: String }
+      exists:     { params: [key: String], returns: Boolean }
+
+    sdkMethods:
+      setItem:    { maps: [setItem], note: "Returns StorageResult" }
+      getItem:    { maps: [getItem], note: "Returns string | null" }
+      removeItem: { maps: [removeItem], note: "Returns StorageResult" }
+      clear:      { maps: [clear], note: "Returns StorageResult" }
+      keys:       { maps: [keys], note: "Parses JSON array to string[]" }
+      getUsage:   { maps: [getUsage], note: "Returns {used, quota} in bytes" }
+      exists:     { maps: [exists], note: "Lightweight existence check without reading value" }
+
+  system:
+    scope: public
+    native: "Loop$system"
+    kotlinClass: SystemNamespace
+    sdkExport: Loop.system
+
+    nativeMethods:
+      isFreeRotateEnabled: { returns: String }
+      setFreeRotate:       { params: [enabled: Boolean], returns: String }
+
+    sdkMethods:
+      isFreeRotateEnabled: { maps: [isFreeRotateEnabled] }
+      setFreeRotate:       { maps: [setFreeRotate] }
+      on:  { maps: [], note: "Wraps addEventListener for loop:pause / loop:resume" }
+      off: { maps: [], note: "Wraps removeEventListener for loop:pause / loop:resume" }
+
+    events:
+      - "loop:pause"
+      - "loop:resume"

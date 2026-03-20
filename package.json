@@ -1,0 +1,23 @@
+{
+  "name": "native-webview",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "generate": "node scripts/generate-bridge-contracts.mjs",
+    "build:sdk": "rollup -c && rm -f app/src/main/assets/loop-sdk.d.ts app/src/main/assets/internal-sdk.d.ts && cp sdk/loop-sdk-dx.d.ts types/loop-sdk.d.ts && cp sdk/internal-sdk-dx.d.ts types/internal-sdk.d.ts",
+    "build": "npm run generate && npm run build:sdk",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "node scripts/check-bridge-contract.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.19.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^12.3.0",
+    "rollup": "^4.57.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.7.0"
+  }
+}

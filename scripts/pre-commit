@@ -1,0 +1,68 @@
+#!/bin/bash
+# Pre-commit hook: run checks when relevant files are staged.
+# Skip with: git commit --no-verify
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+# --- Kotlin/Java: run unit tests ---
+STAGED_KT_JAVA=$(echo "$STAGED" | grep -E '\.(kt|java)$')
+
+if [ -n "$STAGED_KT_JAVA" ]; then
+    echo "Running detekt (staged .kt/.java files detected)..."
+    ./gradlew detekt --quiet
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Detekt violations found. Commit blocked."
+        echo "Fix the violations or skip with: git commit --no-verify"
+        exit 1
+    fi
+
+    echo "Running unit tests (staged .kt/.java files detected)..."
+    ./gradlew testDebugUnitTest --quiet
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Unit tests failed. Commit blocked."
+        echo "Fix the tests or skip with: git commit --no-verify"
+        exit 1
+    fi
+fi
+
+# --- Gradle config: verify build compiles ---
+STAGED_GRADLE=$(echo "$STAGED" | grep -E '(gradle\.properties|build\.gradle\.kts)$')
+
+if [ -n "$STAGED_GRADLE" ]; then
+    echo "Running build check (staged Gradle config detected)..."
+    ./gradlew assembleDebug --quiet
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Build failed after Gradle config change. Commit blocked."
+        echo "Fix the config or skip with: git commit --no-verify"
+        exit 1
+    fi
+fi
+
+# --- Bridge contract: build + check when bridge files are staged ---
+STAGED_BRIDGE=$(echo "$STAGED" | grep -E '(WebAppInterface\.kt|loop-sdk\.ts|internal-sdk\.ts|bridge-contract\.yaml|bridge-types\.ts|internal-types\.ts|loop-sdk-dx\.d\.ts|internal-sdk-dx\.d\.ts|BridgeContracts\.kt)$')
+if [ -n "$STAGED_BRIDGE" ]; then
+    echo "Running bridge contract build + check..."
+    npm run build
+    if [ $? -ne 0 ]; then
+        echo "Bridge contract build failed."
+        exit 1
+    fi
+    npm run check
+    if [ $? -ne 0 ]; then
+        echo "Bridge contract check failed. See above for details."
+        exit 1
+    fi
+
+    # Re-stage generated files updated by the build
+    for f in sdk/generated/bridge-types.ts sdk/generated/internal-types.ts \
+             app/src/main/java/com/dopple/webview/bridge/generated/BridgeContracts.kt \
+             bridge-contract.snapshot.json app/src/main/assets/loop-sdk.js \
+             app/src/main/assets/internal-sdk.js types/loop-sdk.d.ts types/internal-sdk.d.ts; do
+        if [ -f "$f" ] && git diff --name-only "$f" 2>/dev/null | grep -q .; then
+            git add "$f"
+        fi
+    done
+fi
