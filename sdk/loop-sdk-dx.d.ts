@@ -66,6 +66,95 @@ interface MotionSubscription extends EventTarget {
     stop(): void;
 }
 
+// === Motion Control Modes ===
+
+type SensorFusion = 'game' | 'full';
+type RotateAxis = 'twist' | 'turn' | 'lean' | 'roll' | 'yaw' | 'pitch';
+
+interface TiltInput {
+  x: number;
+  y: number;
+  magnitude: number;
+  atRest: boolean;
+  timestamp: number;
+}
+
+interface LookInput {
+  yaw: number;
+  pitch: number;
+  x: number;
+  y: number;
+  magnitude: number;
+  atRest: boolean;
+  timestamp: number;
+}
+
+interface RotateInput {
+  angle: number;
+  value: number;
+  atRest: boolean;
+  timestamp: number;
+}
+
+interface TiltOptions {
+  frequency?: number;
+  smoothing?: number;
+  maxAngle?: number;
+  deadzone?: number;
+  sensitivity?: { x: number; y: number };
+  autoRecalibrate?: boolean;
+}
+
+interface LookOptions {
+  frequency?: number;
+  smoothing?: number;
+  maxAngle?: number;
+  deadzone?: number;
+  sensitivity?: { x: number; y: number };
+  /** @default 'game' — TYPE_GAME_ROTATION_VECTOR (6-axis, no magnetometer) */
+  sensorFusion?: SensorFusion;
+  autoRecalibrate?: boolean;
+}
+
+interface RotateOptions {
+  frequency?: number;
+  smoothing?: number;
+  maxAngle?: number;
+  deadzone?: number;
+  sensitivity?: number;
+  axis?: RotateAxis;
+  /** Only relevant for 'turn'/'yaw' axis. @default 'game' */
+  sensorFusion?: SensorFusion;
+  autoRecalibrate?: boolean;
+}
+
+interface MotionController<T = TiltInput | LookInput | RotateInput> {
+  readonly mode: 'tilt' | 'look' | 'rotate';
+  readonly calibrated: boolean;
+  readonly active: boolean;
+  readonly lastInput: T | null;
+  recalibrate(): void;
+  pauseRecalibration(): void;
+  resumeRecalibration(): void;
+  on(event: 'input', handler: (input: T) => void): this;
+  on(event: 'calibrated', handler: () => void): this;
+  on(event: 'rest', handler: (atRest: boolean) => void): this;
+  off(event: string, handler: Function): this;
+  stop(): void;
+}
+
+interface TiltController extends MotionController<TiltInput> {
+  readonly mode: 'tilt';
+}
+
+interface LookController extends MotionController<LookInput> {
+  readonly mode: 'look';
+}
+
+interface RotateController extends MotionController<RotateInput> {
+  readonly mode: 'rotate';
+}
+
 /** Motion API interface */
 interface MotionAPI {
     isSupported(): boolean;
@@ -75,6 +164,14 @@ interface MotionAPI {
     getStatus(): MotionStatus;
     getLatest(): MotionData | null;
     stopAll(): void;
+    /** Start tilt mode — gravity-based 2D joystick. */
+    tilt(options?: TiltOptions): Promise<TiltController>;
+    /** Start look mode — quaternion-based panoramic view. */
+    look(options?: LookOptions): Promise<LookController>;
+    /** Start rotate mode — single-axis rotation. */
+    rotate(options?: RotateOptions): Promise<RotateController>;
+    /** Start raw motion data subscription (alias for start). */
+    raw(options?: MotionOptions): Promise<MotionSubscription>;
 }
 
 // ==================== Button Types ====================
