@@ -29,8 +29,8 @@ Four modes:
 - **`rotate`** — single-axis rotation with gesture-named axes (steering, dials, body turn)
 - **`raw`** — existing behavior, unchanged
 
-All processing happens in **JavaScript** — no native (Kotlin) changes. The mode controllers are JS classes that consume the existing raw `loop:motion` events and process them into clean output. This means:
-- No native rebuild required for iteration
+All mode processing happens in **JavaScript** — the mode controllers are JS classes that consume the existing raw `loop:motion` events and process them into clean output. One native change is required: adding a `setSensorFusion` bridge method to switch between `TYPE_GAME_ROTATION_VECTOR` (default, 6-axis) and `TYPE_ROTATION_VECTOR` (9-axis with magnetometer) for quaternion-based modes. This means:
+- Mode logic requires no native rebuild for iteration
 - 3P developers can inspect the SDK source when debugging
 - A browser-based simulator/playground becomes trivial (no native bridge needed)
 - Hot paths can be moved to Kotlin later if profiling shows a need
@@ -101,7 +101,9 @@ interface TiltInput {
 
 **Physical gesture:** The user holds the device and rotates it in space to look around — like holding a phone up and turning to see a panorama. The screen shows what's "behind" it in the virtual world. Point left, see what's to the left.
 
-**Sensor:** Full quaternion orientation from `MotionData.orientation` (sourced from Android's `TYPE_ROTATION_VECTOR`, which implements hardware-accelerated sensor fusion). The controller captures a reference quaternion at calibration, then computes the delta: `inverse(reference) * current`. From this delta quaternion it extracts yaw (horizontal look) and pitch (vertical look).
+**Sensor:** Full quaternion orientation from `MotionData.orientation`. By default, sourced from Android's `TYPE_GAME_ROTATION_VECTOR` (6-axis: accel + gyro, no magnetometer). Optionally `TYPE_ROTATION_VECTOR` (9-axis: adds magnetometer for yaw anchoring to magnetic north). The controller captures a reference quaternion at calibration, then computes the delta: `inverse(reference) * current`. From this delta quaternion it extracts yaw (horizontal look) and pitch (vertical look).
+
+**Why `game` fusion by default:** The Loop is wrist-worn — held near phones, laptops, metal objects. The magnetometer correction in `TYPE_ROTATION_VECTOR` can introduce sudden yaw jumps from magnetic interference, which are worse than the slow, predictable gyro drift that `TYPE_GAME_ROTATION_VECTOR` exhibits. Our auto-recalibration handles slow drift well; it cannot distinguish magnetic jumps from intentional user movement. Games don't need absolute north — they need "forward is where I pointed at calibration."
 
 **Why quaternion, not gravity:** Gravity cannot detect yaw — horizontal rotation. If the user spins in their chair while holding the device level, gravity doesn't change at all. Quaternion orientation from the rotation vector sensor captures all three rotation axes. This is the same sensor that AR frameworks like ARCore and Vuforia use for 3DOF phone tracking.
 
@@ -148,7 +150,7 @@ Both degrees and normalized values are provided because different games need dif
 | Gesture name | Technical alias | Physical motion | Sensor source |
 |---|---|---|---|
 | `twist` (default) | `roll` | Wrist rotation, like turning a doorknob | Gravity — `atan2(gravity.x, -gravity.z)`. Drift-free. |
-| `turn` | `yaw` | Body/vertical rotation, like spinning in a chair | Quaternion yaw extraction. Subject to drift, auto-recal compensates. |
+| `turn` | `yaw` | Body/vertical rotation, like spinning in a chair | Quaternion yaw extraction (default: `game` fusion). Subject to drift, auto-recal compensates. |
 | `lean` | `pitch` | Forward/backward tilt, like nodding | Gravity — `atan2(gravity.y, -gravity.z)`. Drift-free. |
 
 The type accepts both gesture and technical names:
@@ -254,6 +256,19 @@ interface LookOptions {
 
   /** @default true */
   autoRecalibrate?: boolean;
+
+  /** Sensor fusion strategy for orientation tracking.
+   *  'game' — gyro+accel only (TYPE_GAME_ROTATION_VECTOR). Smooth, predictable
+   *           yaw drift handled by auto-recalibration. No magnetic interference.
+   *           Best for most games on a wrist-worn device.
+   *  'full' — gyro+accel+magnetometer (TYPE_ROTATION_VECTOR). Yaw anchored to
+   *           magnetic north, but susceptible to interference near electronics/metal.
+   *           Better for compass-like applications needing absolute heading.
+   *  Internally adjusts auto-recalibration rates: 'game' uses conservative frozen
+   *  rate (0.02/sec) since drift is slow; 'full' uses slightly higher frozen rate
+   *  (0.08/sec) to recover from magnetic interference jumps.
+   *  @default 'game' */
+  sensorFusion?: 'game' | 'full';
 }
 ```
 
@@ -289,6 +304,12 @@ interface RotateOptions {
 
   /** @default true */
   autoRecalibrate?: boolean;
+
+  /** Sensor fusion strategy. Only applies when axis is 'turn' (yaw), which
+   *  uses quaternion orientation. Ignored for 'twist' and 'lean' (gravity-based).
+   *  See LookOptions.sensorFusion for full description.
+   *  @default 'game' */
+  sensorFusion?: 'game' | 'full';
 }
 ```
 
@@ -401,10 +422,12 @@ Raw IMU sensors produce noisy startup readings. The first ~200-500ms of data aft
 
 After calibration, the reference is continuously adjusted to track the user's natural drift:
 
-- **Rate selection** is based on input magnitude and rest state:
+- **Rate selection** is based on input magnitude, rest state, and sensor fusion type:
   - `atRest` → fast rate (3.0 corrections/sec) — during natural pauses, snap quickly
   - Near center (low magnitude) → moderate rate (proportional to centrality)
-  - Full tilt (high magnitude) → frozen rate (0.02/sec) — never fight active input
+  - Full tilt (high magnitude) → frozen rate, varies by fusion type:
+    - `sensorFusion: 'game'` → 0.02/sec — gyro drift is slow and predictable, minimal correction needed
+    - `sensorFusion: 'full'` → 0.08/sec — slightly more aggressive to recover from magnetic interference jumps that occur during active use
 - **Interpolation method** depends on mode (both use frame-rate-independent exponential decay):
   - Gravity reference: `reference = lerp(reference, current, 1 - exp(-rate * deltaTime))`
   - Quaternion reference: `reference = slerp(reference, current, 1 - exp(-rate * deltaTime))`
@@ -495,35 +518,42 @@ Three classes are shared across all mode controllers:
 
 **RestDetector** — maintains a circular buffer of gravity readings (30 samples), computes variance each frame. Below threshold (0.0002) for settle time (400ms) = at rest. Any motion = immediate exit (no exit hysteresis). Ported from Vivarium's `GyroInputProvider.UpdateRestDetection()`.
 
-## 11. Native Foundation (unchanged — for reviewer context)
+## 11. Native Foundation
 
-The mode controllers are built on top of an existing, tested native IMU pipeline. No native changes are required for this feature.
+The mode controllers are built on top of an existing, tested native IMU pipeline. One native change is required: adding a `setSensorFusion` bridge method to switch between `TYPE_GAME_ROTATION_VECTOR` and `TYPE_ROTATION_VECTOR`.
+
+### Hardware (from adb `dumpsys sensorservice`)
+
+| Component | Chip | Vendor | Max Rate |
+|---|---|---|---|
+| Accel + Gyro | ICM-4x6xA | TDK-InvenSense | 400Hz |
+| Magnetometer | QMC630x | QST | 100Hz |
+| SoC | SM6225 (Snapdragon 680) | Qualcomm "bengal" | — |
+| Sensor fusion | Hexagon DSP | Qualcomm | 200Hz |
+
+Both `Rotation Vector` (type 11, 9-axis with mag) and `Game Rotation Vector` (type 15, 6-axis no mag) are available as Qualcomm DSP-fused sensors. AOSP software fallbacks also exist at 400Hz.
 
 ### Bridge contract (`bridge-contract.yaml`)
 
 The `motion` namespace is scope `public` with 7 native methods: `subscribe`, `unsubscribe`, `setFrequency`, `setSmoothingAlpha`, `getStatus`, `getLatest`, `getSensorAvailability`. The code generator (`generate-bridge-contracts.mjs`) produces the `IMUNamespaceContract` Kotlin interface and TypeScript bridge types.
 
+**New method required:** `setSensorFusion(type: 'game' | 'full')` — switches the orientation sensor between `TYPE_GAME_ROTATION_VECTOR` (default) and `TYPE_ROTATION_VECTOR`. Called by the JS controller at mode start based on the `sensorFusion` option. The switch unregisters the current orientation sensor and registers the new one — accel and gyro subscriptions are unaffected.
+
 ### IMUSensorManager.kt (~405 lines)
 
-Owns the Android sensor lifecycle. Registers `TYPE_ACCELEROMETER`, `TYPE_GYROSCOPE`, and `TYPE_ROTATION_VECTOR` at `SENSOR_DELAY_FASTEST` on a dedicated `HandlerThread("IMUSensorThread")`. Rate-limits event dispatch to the configured frequency (default 60Hz). Applies EMA smoothing to gravity. Manages subscription reference counting (first subscribe starts sensors, last unsubscribe stops them). Handles pause/resume for Android activity lifecycle via weak references.
+Owns the Android sensor lifecycle. Currently registers `TYPE_ACCELEROMETER`, `TYPE_GYROSCOPE`, and `TYPE_ROTATION_VECTOR` at `SENSOR_DELAY_FASTEST` on a dedicated `HandlerThread("IMUSensorThread")`. Rate-limits event dispatch to the configured frequency (default 60Hz). Applies EMA smoothing to gravity. Manages subscription reference counting (first subscribe starts sensors, last unsubscribe stops them). Handles pause/resume for Android activity lifecycle via weak references.
 
-Has stillness detection infrastructure (threshold 0.05 rad/s, duration 0.5s) and a complementary filter factor (0.98), but `applyDriftCorrection()` is currently a no-op — it relies on `TYPE_ROTATION_VECTOR`'s built-in hardware Kalman filter for orientation fusion.
+**Change required:** Default orientation sensor from `TYPE_ROTATION_VECTOR` to `TYPE_GAME_ROTATION_VECTOR`. Add `setSensorFusion()` method that hot-swaps the orientation sensor without interrupting accel/gyro streams. Both sensor types produce identical `Quaternion(x, y, z, w)` output — no change to `IMUData` serialization.
+
+Has stillness detection infrastructure (threshold 0.05 rad/s, duration 0.5s) and a complementary filter factor (0.98), but `applyDriftCorrection()` is currently a no-op — the Qualcomm Hexagon DSP handles orientation fusion at the HAL level.
 
 ### IMUData.kt (~73 lines)
 
-Data classes: `Vector3(x, y, z)`, `Quaternion(x, y, z, w)`, `IMUData`. Hand-built JSON serialization via `buildString { append(...) }` for performance (<1ms target). Carries both `timestamp` (ms, for JS) and `sensorTimestamp` (ns, raw Android).
+Data classes: `Vector3(x, y, z)`, `Quaternion(x, y, z, w)`, `IMUData`. Hand-built JSON serialization via `buildString { append(...) }` for performance (<1ms target). Carries both `timestamp` (ms, for JS) and `sensorTimestamp` (ns, raw Android). **No changes needed** — both fusion types produce the same quaternion format.
 
 ### WebAppInterface.kt
 
-The `IMUNamespace` inner class implements `IMUNamespaceContract` with `@JavascriptInterface` annotations. All 7 methods are thin pass-throughs to `IMUSensorManager`. Events are dispatched as `window.dispatchEvent(new CustomEvent('loop:motion', {detail: <json>}))`.
-
-### Why no native changes
-
-The native layer already provides everything the mode controllers need:
-- `gravity` / `smoothGravity` → used by tilt and rotate (twist/lean) modes
-- `orientation` quaternion → used by look and rotate (turn) modes
-- `delta` (angular velocity) → used by Player Space gyro calculation
-- Configurable frequency and smoothing → passed through from mode options
+The `IMUNamespace` inner class implements `IMUNamespaceContract` with `@JavascriptInterface` annotations. All 7 methods are thin pass-throughs to `IMUSensorManager`. Events are dispatched as `window.dispatchEvent(new CustomEvent('loop:motion', {detail: <json>}))`. Gains one new method: `setSensorFusion`.
 
 Performance is validated: IMU dispatch latency is 8.67ms P50 / 29.13ms P95 at 120Hz with zero dropped frames. The JS processing per frame is a handful of multiplies and one `atan2` — sub-microsecond overhead.
 
@@ -561,9 +591,9 @@ The processing algorithms in the mode controllers are ported from three sources:
 
 - **`flat` mode** (accelerometer position tracking) — double integration of accelerometer data drifts too fast without external references (camera, beacons). Not viable for reliable game input.
 - **Native-side processing** — all mode logic in JS for iteration speed and 3P debuggability. Can be moved to Kotlin later if profiling justifies it.
-- **Magnetometer** — Loop hardware doesn't reliably expose it; not needed for current use cases.
-- **Custom Kalman filter** — Android's `TYPE_ROTATION_VECTOR` already provides hardware-fused orientation via an on-chip Kalman filter. Running another one on top would add latency with marginal accuracy benefit.
-- **x-io Fusion gyro bias estimation and acceleration rejection** — referenced in Section 12 as prior art. These algorithms are designed for raw IMU fusion (building orientation from scratch). Since we use Android's `TYPE_ROTATION_VECTOR` (hardware-fused), gyro bias is already handled. These remain reference material for a potential future native-side processing path, not initial implementation scope.
+- **Direct magnetometer use** — the QMC630x magnetometer is present on Loop hardware (100Hz), but the wrist-worn form factor near electronics makes raw mag unreliable. Instead, magnetometer is optionally included via the `sensorFusion: 'full'` option, which delegates mag handling to Qualcomm's DSP-level `TYPE_ROTATION_VECTOR` fusion.
+- **Custom Kalman filter** — Qualcomm's Hexagon DSP already provides hardware-fused orientation. Running another filter on top would add latency with marginal accuracy benefit.
+- **x-io Fusion gyro bias estimation and acceleration rejection** — referenced in Section 12 as prior art. These algorithms are designed for raw IMU fusion (building orientation from scratch). Since we use Qualcomm's DSP-fused orientation, gyro bias is already handled at the HAL level. These remain reference material for a potential future native-side processing path, not initial implementation scope.
 - **Motion prediction** — extrapolating orientation ahead by a few ms to reduce perceived latency. Valuable for VR headsets (20ms+ display latency) but unnecessary for Loop's direct-to-WebView pipeline (8.67ms P50).
 
 ## 14. Example Usage
