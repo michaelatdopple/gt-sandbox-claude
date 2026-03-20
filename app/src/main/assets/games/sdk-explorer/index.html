@@ -399,6 +399,118 @@
       width: 100%;
       height: 80px;
     }
+
+    /* ── TUNE tab ─────────────────────────────────────────────────────────────── */
+
+    #tune-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: 12px;
+    }
+
+    .tune-rec-row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .tune-rec-circle {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      font-family: 'Courier New', monospace;
+      font-size: 32px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      border: 3px solid rgba(0,212,255,0.5);
+      background: rgba(0,212,255,0.08);
+      color: #00d4ff;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .tune-rec-circle.recording {
+      border-color: #ff4040;
+      background: rgba(255,64,64,0.15);
+      color: #ff4040;
+      animation: tune-pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes tune-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,64,64,0.4); }
+      50%       { box-shadow: 0 0 0 14px rgba(255,64,64,0); }
+    }
+
+    .tune-stat-grid {
+      display: flex;
+      gap: 10px;
+    }
+
+    .tune-stat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(0,212,255,0.05);
+      border: 1px solid rgba(0,212,255,0.15);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+
+    .tune-stat-label {
+      font-size: 22px;
+      color: #668899;
+    }
+
+    .tune-stat-val {
+      font-size: 34px;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      color: #00d4ff;
+    }
+
+    .tune-result-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: rgba(0,212,255,0.05);
+      border: 1px solid rgba(0,212,255,0.15);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 26px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .tune-result-rank {
+      font-size: 30px;
+      font-weight: bold;
+      color: #00d4ff;
+      width: 36px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .tune-result-params {
+      flex: 1;
+      color: #eee;
+    }
+
+    .tune-result-score {
+      color: #00d4ff;
+      font-weight: bold;
+      width: 90px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .tune-helper-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
   </style>
 </head>
 <body>
@@ -631,7 +743,86 @@
 
   <!-- Tune -->
   <section id="tab-tune">
-    <div class="placeholder">Tuning engine — coming soon</div>
+    <div id="tune-layout">
+
+      <!-- Recording Section -->
+      <div class="panel">
+        <div class="panel-title">RECORDING</div>
+        <div class="tune-rec-row">
+          <!-- Record button -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;flex-shrink:0">
+            <button id="tune-rec-btn" class="tune-rec-circle">REC</button>
+            <div id="tune-rec-status" style="font-size:26px;color:#668899;text-align:center">No recording</div>
+          </div>
+          <!-- Stats + Export/Import -->
+          <div style="flex:1;display:flex;flex-direction:column;gap:10px;justify-content:center">
+            <div class="tune-stat-grid">
+              <div class="tune-stat"><span class="tune-stat-label">FRAMES</span><span class="tune-stat-val" id="tune-frames">—</span></div>
+              <div class="tune-stat"><span class="tune-stat-label">DURATION</span><span class="tune-stat-val" id="tune-duration">—</span></div>
+              <div class="tune-stat"><span class="tune-stat-label">AVG Hz</span><span class="tune-stat-val" id="tune-hz">—</span></div>
+            </div>
+            <div class="btn-row">
+              <button class="mode-btn" id="tune-export-btn" onclick="tuneExport()">EXPORT</button>
+              <button class="mode-btn" id="tune-import-btn" onclick="tuneImport()">IMPORT</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parameter Search -->
+      <div class="panel">
+        <div class="panel-title">PARAMETER SEARCH</div>
+        <div id="tune-search-status" style="font-size:28px;color:#668899;margin-bottom:10px">Load a recording to search</div>
+        <div class="btn-row" style="margin-bottom:10px">
+          <button class="mode-btn" id="tune-search-btn" onclick="tuneRunSearch()">RUN SEARCH</button>
+        </div>
+        <!-- Top 3 results -->
+        <div id="tune-results" style="display:none">
+          <div style="font-size:28px;color:#00d4ff;margin-bottom:8px">TOP 3 RESULTS:</div>
+          <div id="tune-result-0" class="tune-result-row"></div>
+          <div id="tune-result-1" class="tune-result-row"></div>
+          <div id="tune-result-2" class="tune-result-row"></div>
+          <!-- Bar chart -->
+          <canvas id="tune-bar-chart" width="720" height="90" style="margin-top:10px;display:block"></canvas>
+        </div>
+      </div>
+
+      <!-- Auto-Derive Helpers -->
+      <div class="panel">
+        <div class="panel-title">AUTO-DERIVE</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+
+          <!-- Find max angle -->
+          <div class="tune-helper-row">
+            <button class="mode-btn" style="flex:0 0 220px;font-size:22px" id="tune-maxangle-btn" onclick="tuneMaxAngle()">FIND MAX ANGLE</button>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:24px;color:#668899">Tilt to your comfortable limit and hold</div>
+              <div style="font-size:26px;color:#00d4ff" id="tune-maxangle-result">—</div>
+            </div>
+          </div>
+
+          <!-- Calibrate deadzone -->
+          <div class="tune-helper-row">
+            <button class="mode-btn" style="flex:0 0 220px;font-size:22px" id="tune-deadzone-btn" onclick="tuneDeadzone()">CALIBRATE DZ</button>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:24px;color:#668899">Hold still for 3 seconds</div>
+              <div style="font-size:26px;color:#00d4ff" id="tune-deadzone-result">—</div>
+            </div>
+          </div>
+
+          <!-- Compare fusion -->
+          <div class="tune-helper-row">
+            <button class="mode-btn" style="flex:0 0 220px;font-size:22px" id="tune-fusion-btn" onclick="tuneFusion()">COMPARE FUSION</button>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:24px;color:#668899">Move freely for 5 seconds</div>
+              <div style="font-size:26px;color:#00d4ff" id="tune-fusion-result">—</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
   </section>
 
 </div>
@@ -1517,6 +1708,423 @@ function stopRotate() {
 document.getElementById('rotate-toggle').addEventListener('click', () => {
   if (rotateCtrl) stopRotate(); else startRotate();
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── TUNE ENGINE ──────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Inline simplified TiltProcessor for replay ───────────────────────────────
+
+function tuneApplyDeadzone(val, dz) {
+  const abs = Math.abs(val);
+  if (abs < dz) return 0;
+  return (abs - dz) / (1 - dz) * Math.sign(val);
+}
+
+function tuneReplayTilt(frames, maxAngle, deadzone, smoothing) {
+  const DEG2RAD = Math.PI / 180;
+  const dzNorm = deadzone / maxAngle;
+  let smX = 0, smY = 0;
+  const out = [];
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    const gx = (f.gravity && f.gravity.x) || 0;
+    const gz = (f.gravity && f.gravity.z) || 0;
+    const rawX = Math.max(-1, Math.min(1, gx / Math.sin(maxAngle * DEG2RAD)));
+    const rawY = Math.max(-1, Math.min(1, gz / Math.sin(maxAngle * DEG2RAD)));
+    smX += (rawX - smX) * smoothing;
+    smY += (rawY - smY) * smoothing;
+    const outX = tuneApplyDeadzone(smX, dzNorm);
+    const outY = tuneApplyDeadzone(smY, dzNorm);
+    out.push(Math.sqrt(outX * outX + outY * outY));
+  }
+  return out;
+}
+
+function tuneScoreMags(mags) {
+  if (mags.length < 4) return 0;
+  const mean = mags.reduce(function(s, v) { return s + v; }, 0) / mags.length;
+  let variance = 0;
+  let jitter = 0;
+  for (let i = 0; i < mags.length; i++) {
+    const d = mags[i] - mean;
+    variance += d * d;
+  }
+  variance /= mags.length;
+  for (let i = 1; i < mags.length; i++) {
+    const d = mags[i] - mags[i - 1];
+    jitter += d * d;
+  }
+  jitter /= (mags.length - 1);
+  return variance - jitter * 2;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+var tuneFrames = [];
+var tuneRecording = false;
+var tuneMotionHandle = null;
+var tuneRecStart = 0;
+
+// ── Recording ─────────────────────────────────────────────────────────────────
+
+function tuneUpdateStats() {
+  var n = tuneFrames.length;
+  document.getElementById('tune-frames').textContent = n > 0 ? n : '\u2014';
+  if (n > 1) {
+    var first = tuneFrames[0].timestamp || 0;
+    var last  = tuneFrames[n - 1].timestamp || 0;
+    var durSec = (last - first) / 1000;
+    document.getElementById('tune-duration').textContent = durSec.toFixed(1) + 's';
+    var hz = durSec > 0 ? Math.round((n - 1) / durSec) : '\u2014';
+    document.getElementById('tune-hz').textContent = hz;
+  } else {
+    document.getElementById('tune-duration').textContent = n === 1 ? '0.0s' : '\u2014';
+    document.getElementById('tune-hz').textContent = '\u2014';
+  }
+}
+
+function tuneStartRecording() {
+  if (typeof Loop === 'undefined' || !Loop.motion) {
+    document.getElementById('tune-rec-status').textContent = 'No device connected';
+    return;
+  }
+  tuneFrames = [];
+  tuneRecStart = performance.now();
+  tuneRecording = true;
+
+  var btn = document.getElementById('tune-rec-btn');
+  btn.classList.add('recording');
+  btn.textContent = 'STOP';
+
+  tuneMotionHandle = Loop.motion.start({ frequency: 60 }, function(frame) {
+    if (frame.timestamp === undefined) {
+      frame = Object.assign({}, frame, { timestamp: performance.now() });
+    }
+    tuneFrames.push(frame);
+    var elapsed = ((performance.now() - tuneRecStart) / 1000).toFixed(1);
+    document.getElementById('tune-rec-status').textContent = tuneFrames.length + ' frames \u00b7 ' + elapsed + 's';
+    tuneUpdateStats();
+  });
+
+  if (Loop.haptics) Loop.haptics.pulse();
+}
+
+function tuneStopRecording() {
+  tuneRecording = false;
+  if (tuneMotionHandle && typeof tuneMotionHandle.stop === 'function') {
+    tuneMotionHandle.stop();
+  }
+  tuneMotionHandle = null;
+
+  var btn = document.getElementById('tune-rec-btn');
+  btn.classList.remove('recording');
+  btn.textContent = 'REC';
+
+  var n = tuneFrames.length;
+  if (n > 0) {
+    document.getElementById('tune-rec-status').textContent = 'Saved ' + n + ' frames';
+    tuneUpdateStats();
+    document.getElementById('tune-search-status').textContent = 'Ready \u2014 ' + n + ' frames loaded';
+  } else {
+    document.getElementById('tune-rec-status').textContent = 'No frames captured';
+  }
+  if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+}
+
+document.getElementById('tune-rec-btn').addEventListener('click', function() {
+  if (tuneRecording) tuneStopRecording(); else tuneStartRecording();
+});
+
+// ── Export / Import ───────────────────────────────────────────────────────────
+
+function tuneExport() {
+  if (tuneFrames.length === 0) {
+    document.getElementById('tune-rec-status').textContent = 'Nothing to export';
+    return;
+  }
+  if (typeof Loop === 'undefined' || !Loop.storage) {
+    document.getElementById('tune-rec-status').textContent = 'No storage available';
+    return;
+  }
+  Loop.storage.setItem('tune:recording', JSON.stringify(tuneFrames));
+  document.getElementById('tune-rec-status').textContent = 'Exported ' + tuneFrames.length + ' frames';
+  if (Loop.haptics) Loop.haptics.pulse();
+}
+
+function tuneImport() {
+  if (typeof Loop === 'undefined' || !Loop.storage) {
+    document.getElementById('tune-rec-status').textContent = 'No storage available';
+    return;
+  }
+  var raw = Loop.storage.getItem('tune:recording');
+  if (!raw) {
+    document.getElementById('tune-rec-status').textContent = 'No saved recording found';
+    return;
+  }
+  try {
+    tuneFrames = JSON.parse(raw);
+    tuneUpdateStats();
+    document.getElementById('tune-rec-status').textContent = 'Imported ' + tuneFrames.length + ' frames';
+    document.getElementById('tune-search-status').textContent = 'Ready \u2014 ' + tuneFrames.length + ' frames loaded';
+    if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+  } catch (e) {
+    document.getElementById('tune-rec-status').textContent = 'Import failed: bad data';
+  }
+}
+
+// ── Parameter Search ──────────────────────────────────────────────────────────
+
+var TUNE_MAXANGLES  = [15, 20, 25, 30, 35];
+var TUNE_DEADZONES  = [0, 1, 2, 3, 5];
+var TUNE_SMOOTHINGS = [0.05, 0.1, 0.15, 0.2];
+
+function tuneRunSearch() {
+  if (tuneFrames.length < 10) {
+    document.getElementById('tune-search-status').textContent = 'Need at least 10 frames \u2014 record or import first';
+    return;
+  }
+  var total = TUNE_MAXANGLES.length * TUNE_DEADZONES.length * TUNE_SMOOTHINGS.length;
+  document.getElementById('tune-search-status').textContent = 'Testing ' + total + ' combinations...';
+  document.getElementById('tune-results').style.display = 'none';
+
+  // Defer to allow browser to paint the status update first
+  setTimeout(function() {
+    var results = [];
+    for (var ai = 0; ai < TUNE_MAXANGLES.length; ai++) {
+      for (var di = 0; di < TUNE_DEADZONES.length; di++) {
+        for (var si = 0; si < TUNE_SMOOTHINGS.length; si++) {
+          var maxAngle = TUNE_MAXANGLES[ai];
+          var deadzone = TUNE_DEADZONES[di];
+          var smoothing = TUNE_SMOOTHINGS[si];
+          var mags = tuneReplayTilt(tuneFrames, maxAngle, deadzone, smoothing);
+          var score = tuneScoreMags(mags);
+          results.push({ maxAngle: maxAngle, deadzone: deadzone, smoothing: smoothing, score: score });
+        }
+      }
+    }
+    results.sort(function(a, b) { return b.score - a.score; });
+    var top3 = results.slice(0, 3);
+
+    document.getElementById('tune-search-status').textContent = 'Done! Top 3 results:';
+    document.getElementById('tune-results').style.display = 'block';
+
+    var medals = ['#1', '#2', '#3'];
+    for (var i = 0; i < 3; i++) {
+      var r = top3[i];
+      var el = document.getElementById('tune-result-' + i);
+      el.textContent = '';
+
+      var rankSpan = document.createElement('span');
+      rankSpan.className = 'tune-result-rank';
+      rankSpan.textContent = medals[i];
+
+      var paramSpan = document.createElement('span');
+      paramSpan.className = 'tune-result-params';
+      paramSpan.textContent = 'maxAngle=' + r.maxAngle + '\u00b0  dz=' + r.deadzone + '\u00b0  smooth=' + r.smoothing;
+
+      var scoreSpan = document.createElement('span');
+      scoreSpan.className = 'tune-result-score';
+      scoreSpan.textContent = r.score.toFixed(4);
+
+      el.appendChild(rankSpan);
+      el.appendChild(paramSpan);
+      el.appendChild(scoreSpan);
+    }
+
+    tuneDrawBarChart(top3);
+    if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+  }, 20);
+}
+
+function tuneDrawBarChart(top3) {
+  var canvas = document.getElementById('tune-bar-chart');
+  var ctx = canvas.getContext('2d');
+  var W = 720, H = 90;
+  ctx.clearRect(0, 0, W, H);
+
+  var maxScore = 0.0001;
+  for (var i = 0; i < top3.length; i++) {
+    if (Math.abs(top3[i].score) > maxScore) maxScore = Math.abs(top3[i].score);
+  }
+
+  var barColors = ['#00d4ff', 'rgba(0,212,255,0.6)', 'rgba(0,212,255,0.35)'];
+  var labels = ['#1', '#2', '#3'];
+  var barW = 180;
+  var gap = (W - barW * 3) / 4;
+
+  for (var j = 0; j < top3.length; j++) {
+    var x = gap + j * (barW + gap);
+    var barH = Math.max(4, (Math.abs(top3[j].score) / maxScore) * (H - 32));
+    var y = H - barH - 24;
+
+    ctx.fillStyle = barColors[j];
+    ctx.fillRect(x, y, barW, barH);
+
+    ctx.fillStyle = '#00d4ff';
+    ctx.font = 'bold 24px Courier New, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(labels[j], x + barW / 2, H);
+  }
+}
+
+// ── Auto-Derive Helpers ───────────────────────────────────────────────────────
+
+function tuneAutoRecord(durationMs, onDone) {
+  if (typeof Loop === 'undefined' || !Loop.motion) {
+    onDone(null, 'No device connected');
+    return;
+  }
+  var collected = [];
+  var handle = Loop.motion.start({ frequency: 60 }, function(frame) {
+    if (frame.timestamp === undefined) {
+      frame = Object.assign({}, frame, { timestamp: performance.now() });
+    }
+    collected.push(frame);
+  });
+  setTimeout(function() {
+    if (handle && typeof handle.stop === 'function') handle.stop();
+    onDone(collected, null);
+  }, durationMs);
+}
+
+function tuneMaxAngle() {
+  var btn = document.getElementById('tune-maxangle-btn');
+  var res = document.getElementById('tune-maxangle-result');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  res.textContent = 'Recording 3s\u2026';
+  res.style.color = '#ff4040';
+
+  var countdown = 3;
+  var iv = setInterval(function() {
+    countdown--;
+    if (countdown > 0) res.textContent = 'Hold limit\u2026 ' + countdown + 's';
+  }, 1000);
+
+  tuneAutoRecord(3000, function(frames, err) {
+    clearInterval(iv);
+    btn.disabled = false;
+    if (err || !frames || frames.length < 5) {
+      res.textContent = err || 'Not enough data';
+      res.style.color = '#ff4040';
+      return;
+    }
+    var peakAngleDeg = 0;
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      var gx = (f.gravity && f.gravity.x) || 0;
+      var gz = (f.gravity && f.gravity.z) || 0;
+      var mag = Math.sqrt(gx * gx + gz * gz);
+      var angleDeg = Math.asin(Math.min(1, mag)) * 180 / Math.PI;
+      if (angleDeg > peakAngleDeg) peakAngleDeg = angleDeg;
+    }
+    var suggested = Math.round(peakAngleDeg * 1.1);
+    res.textContent = 'Peak: ' + peakAngleDeg.toFixed(1) + '\u00b0  \u2192  Suggest maxAngle=' + suggested + '\u00b0';
+    res.style.color = '#00d4ff';
+    if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+  });
+}
+
+function tuneDeadzone() {
+  var btn = document.getElementById('tune-deadzone-btn');
+  var res = document.getElementById('tune-deadzone-result');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  res.textContent = 'Hold still\u2026 3s';
+  res.style.color = '#ff4040';
+
+  var countdown = 3;
+  var iv = setInterval(function() {
+    countdown--;
+    if (countdown > 0) res.textContent = 'Hold still\u2026 ' + countdown + 's';
+  }, 1000);
+
+  tuneAutoRecord(3000, function(frames, err) {
+    clearInterval(iv);
+    btn.disabled = false;
+    if (err || !frames || frames.length < 5) {
+      res.textContent = err || 'Not enough data';
+      res.style.color = '#ff4040';
+      return;
+    }
+    var gxVals = [];
+    var gzVals = [];
+    for (var i = 0; i < frames.length; i++) {
+      gxVals.push((frames[i].gravity && frames[i].gravity.x) || 0);
+      gzVals.push((frames[i].gravity && frames[i].gravity.z) || 0);
+    }
+    function maxDeviation(vals) {
+      var mean = vals.reduce(function(s, v) { return s + v; }, 0) / vals.length;
+      var mx = 0;
+      for (var k = 0; k < vals.length; k++) {
+        var abs = Math.abs(vals[k] - mean);
+        if (abs > mx) mx = abs;
+      }
+      return mx;
+    }
+    var noiseFloor = Math.max(maxDeviation(gxVals), maxDeviation(gzVals));
+    var noiseDeg = Math.asin(Math.min(1, noiseFloor)) * 180 / Math.PI;
+    var suggested = Math.max(1, Math.round(noiseDeg * 1.5 * 10) / 10);
+    res.textContent = 'Noise: ' + noiseDeg.toFixed(2) + '\u00b0  \u2192  Suggest deadzone=' + suggested + '\u00b0';
+    res.style.color = '#00d4ff';
+    if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+  });
+}
+
+function tuneFusion() {
+  var btn = document.getElementById('tune-fusion-btn');
+  var res = document.getElementById('tune-fusion-result');
+  if (btn.disabled) return;
+  if (typeof Loop === 'undefined' || !Loop.motion) {
+    res.textContent = 'No device connected';
+    return;
+  }
+  btn.disabled = true;
+  res.textContent = 'Recording game fusion\u2026 5s';
+  res.style.color = '#ff4040';
+
+  function driftScore(frames) {
+    var drift = 0;
+    for (var i = 1; i < frames.length; i++) {
+      var a = frames[i].orientation;
+      var b = frames[i - 1].orientation;
+      if (!a || !b) continue;
+      var dz = ((a.z || 0) - (b.z || 0));
+      drift += Math.abs(dz);
+    }
+    return drift;
+  }
+
+  var gameFrames = [];
+  var gameHandle = Loop.motion.start({ frequency: 60, sensorFusion: 'game' }, function(frame) {
+    gameFrames.push(frame);
+  });
+
+  setTimeout(function() {
+    if (gameHandle && typeof gameHandle.stop === 'function') gameHandle.stop();
+    res.textContent = 'Recording full fusion\u2026 5s';
+
+    var fullFrames = [];
+    var fullHandle = Loop.motion.start({ frequency: 60, sensorFusion: 'full' }, function(frame) {
+      fullFrames.push(frame);
+    });
+
+    setTimeout(function() {
+      if (fullHandle && typeof fullHandle.stop === 'function') fullHandle.stop();
+      btn.disabled = false;
+
+      var gameScore = driftScore(gameFrames);
+      var fullScore = driftScore(fullFrames);
+      var winner = gameScore <= fullScore ? 'GAME' : 'FULL';
+      res.textContent = 'game=' + gameScore.toFixed(3) + '  full=' + fullScore.toFixed(3) + '  \u2192  ' + winner + ' wins (less drift)';
+      res.style.color = '#00d4ff';
+      if (Loop.haptics) Loop.haptics.pulse();
+    }, 5000);
+  }, 5000);
+}
 
 
 // ─── Mode canvas render loop (always draw, cheap when idle) ───────────────────
