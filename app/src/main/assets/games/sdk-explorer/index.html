@@ -85,6 +85,174 @@
       font-family: 'Courier New', monospace;
     }
 
+    /* ── Mode tester shared styles ────────────────────────────────────────── */
+    .mode-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+    }
+
+    .mode-canvas-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .mode-canvas {
+      border-radius: 8px;
+      background: #030309;
+      display: block;
+    }
+
+    .mode-values {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .mode-val-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(0,212,255,0.05);
+      border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+
+    .mode-val-label {
+      font-size: 24px;
+      color: #668899;
+      margin-bottom: 2px;
+    }
+
+    .mode-val-num {
+      font-size: 44px;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      color: #00d4ff;
+      text-align: center;
+      min-width: 0;
+    }
+
+    .mode-controls {
+      background: rgba(0,212,255,0.05);
+      border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ctrl-label {
+      font-size: 24px;
+      color: #668899;
+      width: 130px;
+      flex-shrink: 0;
+    }
+
+    .ctrl-slider {
+      flex: 1;
+      height: 36px;
+      appearance: none;
+      -webkit-appearance: none;
+      background: rgba(0,212,255,0.15);
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .ctrl-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #00d4ff;
+      cursor: pointer;
+    }
+
+    .ctrl-val {
+      font-size: 28px;
+      font-family: 'Courier New', monospace;
+      color: #00d4ff;
+      width: 60px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .mode-btn {
+      flex: 1;
+      height: 56px;
+      font-family: 'Courier New', monospace;
+      font-size: 26px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      border-radius: 8px;
+      border: 2px solid rgba(0,212,255,0.5);
+      background: rgba(0,212,255,0.08);
+      color: #00d4ff;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .mode-btn:active,
+    .mode-btn.active-sel {
+      background: rgba(0,212,255,0.25);
+      border-color: #00d4ff;
+    }
+
+    .mode-btn.start-btn {
+      border-color: rgba(0,212,255,0.5);
+      color: #00d4ff;
+    }
+
+    .mode-btn.stop-btn {
+      border-color: rgba(255,80,80,0.7);
+      background: rgba(255,80,80,0.1);
+      color: #ff5050;
+    }
+
+    .rest-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rest-pip {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #00cc44;
+      box-shadow: 0 0 8px rgba(0,204,68,0.7);
+      transition: background 0.15s, box-shadow 0.15s;
+      flex-shrink: 0;
+    }
+
+    .rest-pip.moving {
+      background: #ff3344;
+      box-shadow: 0 0 8px rgba(255,51,68,0.7);
+    }
+
+    .rest-pip-label {
+      font-size: 24px;
+      color: #668899;
+    }
+
     /* Dashboard panels */
     .panel {
       background: rgba(0, 212, 255, 0.05);
@@ -310,17 +478,155 @@
 
   <!-- Tilt -->
   <section id="tab-tilt">
-    <div class="placeholder">Tilt tester — coming soon</div>
+    <div class="mode-layout">
+
+      <!-- Crosshair canvas -->
+      <div class="mode-canvas-wrap">
+        <canvas id="tilt-canvas" class="mode-canvas" width="400" height="400"></canvas>
+      </div>
+
+      <!-- Values: x, y, magnitude -->
+      <div class="mode-values">
+        <div class="mode-val-item">
+          <div class="mode-val-label">X</div>
+          <div class="mode-val-num" id="tilt-x">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">Y</div>
+          <div class="mode-val-num" id="tilt-y">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">MAG</div>
+          <div class="mode-val-num" id="tilt-mag">—</div>
+        </div>
+        <div class="mode-val-item" style="flex:0.6">
+          <div class="mode-val-label">REST</div>
+          <div class="rest-indicator" style="margin-top:8px">
+            <div class="rest-pip" id="tilt-rest-pip"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="mode-controls">
+        <div class="ctrl-row">
+          <div class="ctrl-label">MAX ANGLE</div>
+          <input type="range" class="ctrl-slider" id="tilt-maxAngle" min="10" max="60" value="25">
+          <div class="ctrl-val" id="tilt-maxAngle-val">25°</div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">DEADZONE</div>
+          <input type="range" class="ctrl-slider" id="tilt-deadzone" min="0" max="10" value="2">
+          <div class="ctrl-val" id="tilt-deadzone-val">2°</div>
+        </div>
+        <div class="btn-row">
+          <button class="mode-btn start-btn" id="tilt-toggle">START</button>
+        </div>
+      </div>
+
+    </div>
   </section>
 
   <!-- Look -->
   <section id="tab-look">
-    <div class="placeholder">Look tester — coming soon</div>
+    <div class="mode-layout">
+
+      <!-- Grid canvas -->
+      <div class="mode-canvas-wrap">
+        <canvas id="look-canvas" class="mode-canvas" width="400" height="400"></canvas>
+      </div>
+
+      <!-- Values: yaw, pitch, x, y -->
+      <div class="mode-values">
+        <div class="mode-val-item">
+          <div class="mode-val-label">YAW°</div>
+          <div class="mode-val-num" id="look-yaw">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">PITCH°</div>
+          <div class="mode-val-num" id="look-pitch">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">X</div>
+          <div class="mode-val-num" id="look-x">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">Y</div>
+          <div class="mode-val-num" id="look-y">—</div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="mode-controls">
+        <!-- Fusion mode selector -->
+        <div class="ctrl-row">
+          <div class="ctrl-label">FUSION</div>
+          <div class="btn-row" style="flex:1">
+            <button class="mode-btn active-sel" id="look-fusion-game" onclick="setLookFusion('game')">GAME</button>
+            <button class="mode-btn" id="look-fusion-full" onclick="setLookFusion('full')">FULL</button>
+          </div>
+        </div>
+        <!-- Drift display -->
+        <div class="ctrl-row">
+          <div class="ctrl-label">DRIFT</div>
+          <div class="ctrl-val" id="look-drift" style="font-size:32px;width:auto;flex:1;text-align:left;padding-left:8px">—</div>
+          <div class="rest-indicator">
+            <div class="rest-pip" id="look-rest-pip"></div>
+            <div class="rest-pip-label">rest</div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="mode-btn start-btn" id="look-toggle">START</button>
+        </div>
+      </div>
+
+    </div>
   </section>
 
   <!-- Rotate -->
   <section id="tab-rotate">
-    <div class="placeholder">Rotate tester — coming soon</div>
+    <div class="mode-layout">
+
+      <!-- Arc gauge canvas -->
+      <div class="mode-canvas-wrap">
+        <canvas id="rotate-canvas" class="mode-canvas" width="400" height="400"></canvas>
+      </div>
+
+      <!-- Values: angle, value -->
+      <div class="mode-values">
+        <div class="mode-val-item">
+          <div class="mode-val-label">ANGLE°</div>
+          <div class="mode-val-num" id="rotate-angle">—</div>
+        </div>
+        <div class="mode-val-item">
+          <div class="mode-val-label">VALUE</div>
+          <div class="mode-val-num" id="rotate-value">—</div>
+        </div>
+        <div class="mode-val-item" style="flex:0.6">
+          <div class="mode-val-label">REST</div>
+          <div class="rest-indicator" style="margin-top:8px">
+            <div class="rest-pip" id="rotate-rest-pip"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="mode-controls">
+        <!-- Axis selector -->
+        <div class="ctrl-row">
+          <div class="ctrl-label">AXIS</div>
+          <div class="btn-row" style="flex:1">
+            <button class="mode-btn active-sel" id="rotate-axis-twist" onclick="setRotateAxis('twist')">TWIST</button>
+            <button class="mode-btn" id="rotate-axis-turn" onclick="setRotateAxis('turn')">TURN</button>
+            <button class="mode-btn" id="rotate-axis-lean" onclick="setRotateAxis('lean')">LEAN</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="mode-btn start-btn" id="rotate-toggle">START</button>
+        </div>
+      </div>
+
+    </div>
   </section>
 
   <!-- Tune -->
@@ -339,6 +645,15 @@ let currentTabIdx = 0;
 function setTab(name) {
   const idx = TABS.indexOf(name);
   if (idx < 0) return;
+
+  // Stop active mode controller if switching away from its tab
+  const prev = TABS[currentTabIdx];
+  if (prev !== name) {
+    if (prev === 'tilt' && tiltCtrl) stopTilt();
+    if (prev === 'look' && lookCtrl) stopLook();
+    if (prev === 'rotate' && rotateCtrl) stopRotate();
+  }
+
   currentTabIdx = idx;
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -357,10 +672,26 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => setTab(btn.dataset.tab));
 });
 
-// B button cycles tabs
+// B button: on mode tabs recalibrate active controller, else cycle tabs
 function setupButtons() {
   if (typeof Loop === 'undefined' || !Loop.buttons) return;
   Loop.buttons.on('B', () => {
+    const tab = TABS[currentTabIdx];
+    if (tab === 'tilt' && tiltCtrl) {
+      tiltCtrl.recalibrate();
+      if (Loop.haptics) Loop.haptics.pulse();
+      return;
+    }
+    if (tab === 'look' && lookCtrl) {
+      lookCtrl.recalibrate();
+      if (Loop.haptics) Loop.haptics.pulse();
+      return;
+    }
+    if (tab === 'rotate' && rotateCtrl) {
+      rotateCtrl.recalibrate();
+      if (Loop.haptics) Loop.haptics.pulse();
+      return;
+    }
     currentTabIdx = (currentTabIdx + 1) % TABS.length;
     setTab(TABS[currentTabIdx]);
   });
@@ -696,6 +1027,508 @@ function simulateMotion() {
   calibStatus = 'Simulation mode';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── TILT MODE TESTER ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const tiltCanvas = document.getElementById('tilt-canvas');
+const tCtx = tiltCanvas.getContext('2d');
+const TC_W = 400, TC_H = 400;
+const TC_CX = TC_W / 2, TC_CY = TC_H / 2;
+const TC_R = 180; // crosshair boundary radius
+
+let tiltCtrl = null;
+let tiltData = { x: 0, y: 0, magnitude: 0, atRest: true };
+let tiltSimAngle = 0;
+
+function drawTilt() {
+  tCtx.clearRect(0, 0, TC_W, TC_H);
+
+  // Background circle
+  tCtx.beginPath();
+  tCtx.arc(TC_CX, TC_CY, TC_R, 0, Math.PI * 2);
+  tCtx.fillStyle = '#030309';
+  tCtx.fill();
+
+  // Color zones: inner green, mid yellow, outer red
+  const grad = tCtx.createRadialGradient(TC_CX, TC_CY, 0, TC_CX, TC_CY, TC_R);
+  grad.addColorStop(0,   'rgba(0,200,80,0.08)');
+  grad.addColorStop(0.5, 'rgba(220,180,0,0.06)');
+  grad.addColorStop(0.85,'rgba(220,60,60,0.07)');
+  grad.addColorStop(1,   'rgba(220,60,60,0.14)');
+  tCtx.beginPath();
+  tCtx.arc(TC_CX, TC_CY, TC_R, 0, Math.PI * 2);
+  tCtx.fillStyle = grad;
+  tCtx.fill();
+
+  // Boundary ring
+  tCtx.beginPath();
+  tCtx.arc(TC_CX, TC_CY, TC_R, 0, Math.PI * 2);
+  tCtx.strokeStyle = 'rgba(0,212,255,0.35)';
+  tCtx.lineWidth = 2;
+  tCtx.stroke();
+
+  // Inner guide rings
+  [0.33, 0.66].forEach(r => {
+    tCtx.beginPath();
+    tCtx.arc(TC_CX, TC_CY, TC_R * r, 0, Math.PI * 2);
+    tCtx.strokeStyle = 'rgba(0,212,255,0.1)';
+    tCtx.lineWidth = 1;
+    tCtx.stroke();
+  });
+
+  // Crosshair lines
+  tCtx.strokeStyle = 'rgba(0,212,255,0.2)';
+  tCtx.lineWidth = 1;
+  tCtx.beginPath();
+  tCtx.moveTo(TC_CX - TC_R, TC_CY);
+  tCtx.lineTo(TC_CX + TC_R, TC_CY);
+  tCtx.stroke();
+  tCtx.beginPath();
+  tCtx.moveTo(TC_CX, TC_CY - TC_R);
+  tCtx.lineTo(TC_CX, TC_CY + TC_R);
+  tCtx.stroke();
+
+  // Dot position (clamp to boundary)
+  const dx = tiltData.x * TC_R;
+  const dy = tiltData.y * TC_R;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const clamp = dist > TC_R ? TC_R / dist : 1;
+  const dotX = TC_CX + dx * clamp;
+  const dotY = TC_CY + dy * clamp;
+
+  // Trail line from center
+  if (!tiltData.atRest) {
+    tCtx.beginPath();
+    tCtx.moveTo(TC_CX, TC_CY);
+    tCtx.lineTo(dotX, dotY);
+    tCtx.strokeStyle = 'rgba(0,212,255,0.3)';
+    tCtx.lineWidth = 2;
+    tCtx.stroke();
+  }
+
+  // Dot glow
+  const dotColor = tiltData.atRest ? '#00cc44' : '#00d4ff';
+  const glowColor = tiltData.atRest ? 'rgba(0,204,68,0.4)' : 'rgba(0,212,255,0.4)';
+  tCtx.beginPath();
+  tCtx.arc(dotX, dotY, 18, 0, Math.PI * 2);
+  tCtx.fillStyle = glowColor;
+  tCtx.fill();
+  tCtx.beginPath();
+  tCtx.arc(dotX, dotY, 10, 0, Math.PI * 2);
+  tCtx.fillStyle = dotColor;
+  tCtx.fill();
+
+  // Center pip
+  tCtx.beginPath();
+  tCtx.arc(TC_CX, TC_CY, 4, 0, Math.PI * 2);
+  tCtx.fillStyle = 'rgba(0,212,255,0.5)';
+  tCtx.fill();
+
+  // No-device label when idle and no controller
+  if (!tiltCtrl) {
+    tCtx.fillStyle = 'rgba(102,136,153,0.8)';
+    tCtx.font = '28px Courier New, monospace';
+    tCtx.textAlign = 'center';
+    tCtx.textBaseline = 'middle';
+    if (typeof Loop === 'undefined') {
+      tCtx.fillText('Connect Loop device', TC_CX, TC_CY + TC_R * 0.6);
+    } else {
+      tCtx.fillText('Press START', TC_CX, TC_CY + TC_R * 0.6);
+    }
+  }
+}
+
+function updateTiltUI() {
+  document.getElementById('tilt-x').textContent = tiltCtrl ? tiltData.x.toFixed(2) : '—';
+  document.getElementById('tilt-y').textContent = tiltCtrl ? tiltData.y.toFixed(2) : '—';
+  document.getElementById('tilt-mag').textContent = tiltCtrl ? tiltData.magnitude.toFixed(2) : '—';
+  const pip = document.getElementById('tilt-rest-pip');
+  pip.classList.toggle('moving', !tiltData.atRest);
+}
+
+function startTilt() {
+  if (typeof Loop === 'undefined' || !Loop.motion) return;
+  const maxAngle = parseInt(document.getElementById('tilt-maxAngle').value);
+  const deadzone = parseInt(document.getElementById('tilt-deadzone').value);
+  tiltCtrl = Loop.motion.tilt({ maxAngle, deadzone });
+  tiltCtrl.on('input', data => {
+    tiltData = data;
+    updateTiltUI();
+  });
+  tiltCtrl.on('rest', () => {
+    tiltData.atRest = true;
+    updateTiltUI();
+  });
+  const btn = document.getElementById('tilt-toggle');
+  btn.textContent = 'STOP';
+  btn.classList.remove('start-btn');
+  btn.classList.add('stop-btn');
+  if (Loop.haptics) Loop.haptics.pulse();
+}
+
+function stopTilt() {
+  if (tiltCtrl) { tiltCtrl.stop(); tiltCtrl = null; }
+  tiltData = { x: 0, y: 0, magnitude: 0, atRest: true };
+  updateTiltUI();
+  const btn = document.getElementById('tilt-toggle');
+  btn.textContent = 'START';
+  btn.classList.remove('stop-btn');
+  btn.classList.add('start-btn');
+  if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+}
+
+document.getElementById('tilt-toggle').addEventListener('click', () => {
+  if (tiltCtrl) stopTilt(); else startTilt();
+});
+
+// Slider live display + restart on change
+['tilt-maxAngle', 'tilt-deadzone'].forEach(id => {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById(id + '-val');
+  el.addEventListener('input', () => {
+    valEl.textContent = el.value + '°';
+    if (tiltCtrl) { stopTilt(); startTilt(); }
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── LOOK MODE TESTER ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const lookCanvas = document.getElementById('look-canvas');
+const lCtx = lookCanvas.getContext('2d');
+const LC_W = 400, LC_H = 400;
+const LC_CX = LC_W / 2, LC_CY = LC_H / 2;
+
+let lookCtrl = null;
+let lookData = { yaw: 0, pitch: 0, x: 0, y: 0, magnitude: 0, atRest: true };
+let lookFusion = 'game';
+let lookDriftAccum = 0;
+let lookLastYaw = null;
+
+function drawLook() {
+  lCtx.clearRect(0, 0, LC_W, LC_H);
+
+  // Background
+  lCtx.fillStyle = '#030309';
+  lCtx.fillRect(0, 0, LC_W, LC_H);
+
+  // Clip to square
+  lCtx.save();
+  lCtx.beginPath();
+  lCtx.rect(0, 0, LC_W, LC_H);
+  lCtx.clip();
+
+  const GRID_SPACING = 60;
+  // Shift grid lines by yaw/pitch mapped to pixels
+  // yaw ±1 → full grid shift horizontally; pitch ±1 → vertically
+  const shiftX = ((lookData.x % 1) + 1) % 1 * GRID_SPACING;
+  const shiftY = ((lookData.y % 1) + 1) % 1 * GRID_SPACING;
+
+  lCtx.strokeStyle = 'rgba(0,212,255,0.18)';
+  lCtx.lineWidth = 1;
+
+  // Vertical lines
+  for (let x = (shiftX % GRID_SPACING) - GRID_SPACING; x < LC_W + GRID_SPACING; x += GRID_SPACING) {
+    lCtx.beginPath();
+    lCtx.moveTo(x, 0);
+    lCtx.lineTo(x, LC_H);
+    lCtx.stroke();
+  }
+  // Horizontal lines
+  for (let y = (shiftY % GRID_SPACING) - GRID_SPACING; y < LC_H + GRID_SPACING; y += GRID_SPACING) {
+    lCtx.beginPath();
+    lCtx.moveTo(0, y);
+    lCtx.lineTo(LC_W, y);
+    lCtx.stroke();
+  }
+
+  // Center crosshair fixed
+  lCtx.strokeStyle = 'rgba(0,212,255,0.5)';
+  lCtx.lineWidth = 1.5;
+  const CH = 24;
+  lCtx.beginPath();
+  lCtx.moveTo(LC_CX - CH, LC_CY);
+  lCtx.lineTo(LC_CX + CH, LC_CY);
+  lCtx.stroke();
+  lCtx.beginPath();
+  lCtx.moveTo(LC_CX, LC_CY - CH);
+  lCtx.lineTo(LC_CX, LC_CY + CH);
+  lCtx.stroke();
+
+  // Center dot
+  const dotColor = lookData.atRest ? '#00cc44' : '#00d4ff';
+  const glowColor = lookData.atRest ? 'rgba(0,204,68,0.4)' : 'rgba(0,212,255,0.35)';
+  lCtx.beginPath();
+  lCtx.arc(LC_CX, LC_CY, 16, 0, Math.PI * 2);
+  lCtx.fillStyle = glowColor;
+  lCtx.fill();
+  lCtx.beginPath();
+  lCtx.arc(LC_CX, LC_CY, 7, 0, Math.PI * 2);
+  lCtx.fillStyle = dotColor;
+  lCtx.fill();
+
+  lCtx.restore();
+
+  // Border
+  lCtx.strokeStyle = 'rgba(0,212,255,0.35)';
+  lCtx.lineWidth = 2;
+  lCtx.strokeRect(1, 1, LC_W - 2, LC_H - 2);
+
+  // No-device label
+  if (!lookCtrl) {
+    lCtx.fillStyle = 'rgba(102,136,153,0.8)';
+    lCtx.font = '28px Courier New, monospace';
+    lCtx.textAlign = 'center';
+    lCtx.textBaseline = 'middle';
+    lCtx.fillText(typeof Loop === 'undefined' ? 'Connect Loop device' : 'Press START', LC_CX, LC_CY + 80);
+  }
+}
+
+function updateLookUI() {
+  document.getElementById('look-yaw').textContent   = lookCtrl ? lookData.yaw.toFixed(1)   : '—';
+  document.getElementById('look-pitch').textContent = lookCtrl ? lookData.pitch.toFixed(1) : '—';
+  document.getElementById('look-x').textContent     = lookCtrl ? lookData.x.toFixed(2)     : '—';
+  document.getElementById('look-y').textContent     = lookCtrl ? lookData.y.toFixed(2)     : '—';
+  document.getElementById('look-drift').textContent = lookCtrl ? lookDriftAccum.toFixed(1) + '°' : '—';
+  const pip = document.getElementById('look-rest-pip');
+  pip.classList.toggle('moving', !lookData.atRest);
+}
+
+function setLookFusion(mode) {
+  lookFusion = mode;
+  document.getElementById('look-fusion-game').classList.toggle('active-sel', mode === 'game');
+  document.getElementById('look-fusion-full').classList.toggle('active-sel', mode === 'full');
+  if (lookCtrl) { stopLook(); startLook(); }
+}
+
+function startLook() {
+  if (typeof Loop === 'undefined' || !Loop.motion) return;
+  lookDriftAccum = 0;
+  lookLastYaw = null;
+  lookCtrl = Loop.motion.look({ sensorFusion: lookFusion });
+  lookCtrl.on('input', data => {
+    // Accumulate yaw drift
+    if (lookLastYaw !== null) {
+      lookDriftAccum += Math.abs(data.yaw - lookLastYaw);
+    }
+    lookLastYaw = data.yaw;
+    lookData = data;
+    updateLookUI();
+  });
+  lookCtrl.on('rest', () => {
+    lookData.atRest = true;
+    updateLookUI();
+  });
+  lookCtrl.on('calibrated', () => {
+    lookDriftAccum = 0;
+    lookLastYaw = null;
+  });
+  const btn = document.getElementById('look-toggle');
+  btn.textContent = 'STOP';
+  btn.classList.remove('start-btn');
+  btn.classList.add('stop-btn');
+  if (Loop.haptics) Loop.haptics.pulse();
+}
+
+function stopLook() {
+  if (lookCtrl) { lookCtrl.stop(); lookCtrl = null; }
+  lookData = { yaw: 0, pitch: 0, x: 0, y: 0, magnitude: 0, atRest: true };
+  lookDriftAccum = 0;
+  lookLastYaw = null;
+  updateLookUI();
+  const btn = document.getElementById('look-toggle');
+  btn.textContent = 'START';
+  btn.classList.remove('stop-btn');
+  btn.classList.add('start-btn');
+  if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+}
+
+document.getElementById('look-toggle').addEventListener('click', () => {
+  if (lookCtrl) stopLook(); else startLook();
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── ROTATE MODE TESTER ───────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const rotateCanvas = document.getElementById('rotate-canvas');
+const roCtx = rotateCanvas.getContext('2d');
+const RC_W = 400, RC_H = 400;
+const RC_CX = RC_W / 2, RC_CY = RC_H / 2;
+const RC_GAUGE_R = 160;
+const RC_GAUGE_START = Math.PI * 0.85;  // ~153° from positive X
+const RC_GAUGE_END   = Math.PI * 2.15;  // mirror
+
+let rotateCtrl = null;
+let rotateData = { angle: 0, value: 0, atRest: true };
+let rotateAxis = 'twist';
+
+function drawRotate() {
+  roCtx.clearRect(0, 0, RC_W, RC_H);
+
+  roCtx.fillStyle = '#030309';
+  roCtx.fillRect(0, 0, RC_W, RC_H);
+
+  // Background arc track
+  roCtx.beginPath();
+  roCtx.arc(RC_CX, RC_CY, RC_GAUGE_R, RC_GAUGE_START, RC_GAUGE_END);
+  roCtx.strokeStyle = 'rgba(0,212,255,0.1)';
+  roCtx.lineWidth = 24;
+  roCtx.lineCap = 'round';
+  roCtx.stroke();
+
+  // Color zones: green center, yellow mid, red edges
+  // Total arc span
+  const arcSpan = RC_GAUGE_END - RC_GAUGE_START;
+  const arcMid = RC_GAUGE_START + arcSpan / 2;
+
+  function drawArcSegment(startA, endA, color) {
+    roCtx.beginPath();
+    roCtx.arc(RC_CX, RC_CY, RC_GAUGE_R, startA, endA);
+    roCtx.strokeStyle = color;
+    roCtx.lineWidth = 24;
+    roCtx.lineCap = 'butt';
+    roCtx.stroke();
+  }
+
+  const z1 = arcSpan * 0.15;
+  const z2 = arcSpan * 0.35;
+  // Red outer left
+  drawArcSegment(RC_GAUGE_START,           RC_GAUGE_START + z1, 'rgba(220,60,60,0.5)');
+  // Yellow mid-left
+  drawArcSegment(RC_GAUGE_START + z1,      RC_GAUGE_START + z2, 'rgba(220,180,0,0.45)');
+  // Green center
+  drawArcSegment(RC_GAUGE_START + z2,      RC_GAUGE_END - z2,   'rgba(0,200,80,0.4)');
+  // Yellow mid-right
+  drawArcSegment(RC_GAUGE_END - z2,        RC_GAUGE_END - z1,   'rgba(220,180,0,0.45)');
+  // Red outer right
+  drawArcSegment(RC_GAUGE_END - z1,        RC_GAUGE_END,        'rgba(220,60,60,0.5)');
+
+  // Tick marks
+  roCtx.strokeStyle = 'rgba(0,212,255,0.3)';
+  roCtx.lineWidth = 2;
+  const TICKS = 9;
+  for (let i = 0; i <= TICKS; i++) {
+    const a = RC_GAUGE_START + (i / TICKS) * arcSpan;
+    const inner = RC_GAUGE_R - 20;
+    const outer = RC_GAUGE_R + 20;
+    roCtx.beginPath();
+    roCtx.moveTo(RC_CX + Math.cos(a) * inner, RC_CY + Math.sin(a) * inner);
+    roCtx.lineTo(RC_CX + Math.cos(a) * outer, RC_CY + Math.sin(a) * outer);
+    roCtx.stroke();
+  }
+
+  // Needle: map angle value (±180°) to arc position
+  // Clamp value to [-1, 1]
+  const normVal = Math.max(-1, Math.min(1, rotateData.value));
+  const needleAngle = arcMid + normVal * (arcSpan / 2);
+
+  // Needle line
+  const nLen = RC_GAUGE_R + 28;
+  const nShort = -30;
+  const needleColor = rotateData.atRest ? '#00cc44' : '#00d4ff';
+  roCtx.beginPath();
+  roCtx.moveTo(RC_CX + Math.cos(needleAngle) * nShort, RC_CY + Math.sin(needleAngle) * nShort);
+  roCtx.lineTo(RC_CX + Math.cos(needleAngle) * nLen,   RC_CY + Math.sin(needleAngle) * nLen);
+  roCtx.strokeStyle = needleColor;
+  roCtx.lineWidth = 4;
+  roCtx.lineCap = 'round';
+  roCtx.stroke();
+
+  // Needle glow
+  roCtx.shadowColor = needleColor;
+  roCtx.shadowBlur = 12;
+  roCtx.beginPath();
+  roCtx.moveTo(RC_CX + Math.cos(needleAngle) * 0, RC_CY + Math.sin(needleAngle) * 0);
+  roCtx.lineTo(RC_CX + Math.cos(needleAngle) * nLen, RC_CY + Math.sin(needleAngle) * nLen);
+  roCtx.strokeStyle = needleColor;
+  roCtx.lineWidth = 2;
+  roCtx.stroke();
+  roCtx.shadowBlur = 0;
+
+  // Center hub
+  roCtx.beginPath();
+  roCtx.arc(RC_CX, RC_CY, 16, 0, Math.PI * 2);
+  roCtx.fillStyle = '#00d4ff';
+  roCtx.fill();
+  roCtx.beginPath();
+  roCtx.arc(RC_CX, RC_CY, 9, 0, Math.PI * 2);
+  roCtx.fillStyle = '#080812';
+  roCtx.fill();
+
+  // No-device label
+  if (!rotateCtrl) {
+    roCtx.fillStyle = 'rgba(102,136,153,0.8)';
+    roCtx.font = '28px Courier New, monospace';
+    roCtx.textAlign = 'center';
+    roCtx.textBaseline = 'middle';
+    roCtx.fillText(typeof Loop === 'undefined' ? 'Connect Loop device' : 'Press START', RC_CX, RC_CY + 60);
+  }
+}
+
+function updateRotateUI() {
+  document.getElementById('rotate-angle').textContent = rotateCtrl ? rotateData.angle.toFixed(1) : '—';
+  document.getElementById('rotate-value').textContent = rotateCtrl ? rotateData.value.toFixed(2)  : '—';
+  const pip = document.getElementById('rotate-rest-pip');
+  pip.classList.toggle('moving', !rotateData.atRest);
+}
+
+function setRotateAxis(axis) {
+  rotateAxis = axis;
+  ['twist','turn','lean'].forEach(a => {
+    document.getElementById('rotate-axis-' + a).classList.toggle('active-sel', a === axis);
+  });
+  if (rotateCtrl) { stopRotate(); startRotate(); }
+}
+
+function startRotate() {
+  if (typeof Loop === 'undefined' || !Loop.motion) return;
+  rotateCtrl = Loop.motion.rotate({ axis: rotateAxis });
+  rotateCtrl.on('input', data => {
+    rotateData = data;
+    updateRotateUI();
+  });
+  rotateCtrl.on('rest', () => {
+    rotateData.atRest = true;
+    updateRotateUI();
+  });
+  const btn = document.getElementById('rotate-toggle');
+  btn.textContent = 'STOP';
+  btn.classList.remove('start-btn');
+  btn.classList.add('stop-btn');
+  if (Loop.haptics) Loop.haptics.pulse();
+}
+
+function stopRotate() {
+  if (rotateCtrl) { rotateCtrl.stop(); rotateCtrl = null; }
+  rotateData = { angle: 0, value: 0, atRest: true };
+  updateRotateUI();
+  const btn = document.getElementById('rotate-toggle');
+  btn.textContent = 'START';
+  btn.classList.remove('stop-btn');
+  btn.classList.add('start-btn');
+  if (typeof Loop !== 'undefined' && Loop.haptics) Loop.haptics.pulse();
+}
+
+document.getElementById('rotate-toggle').addEventListener('click', () => {
+  if (rotateCtrl) stopRotate(); else startRotate();
+});
+
+
+// ─── Mode canvas render loop (always draw, cheap when idle) ───────────────────
+
+function renderModePanels() {
+  drawTilt();
+  drawLook();
+  drawRotate();
+  requestAnimationFrame(renderModePanels);
+}
+
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 function init() {
@@ -712,6 +1545,7 @@ function init() {
   }
 
   render();
+  renderModePanels();
 }
 
 // loop:ready gate with 500ms fallback
