@@ -653,3 +653,97 @@ raw.on('data', (data) => {
   if (shakeDetector.detected()) onShake();
 });
 ```
+
+## 15. SDK Explorer — Evaluation & Tuning Tool
+
+A self-contained HTML page deployed as a game on the Loop (same WebView bridge, full SDK access). Two modes: **Explore** (interactive testing) and **Tune** (automated parameter optimization). Also runnable in a desktop browser with recorded data for offline analysis.
+
+### 15.1 Explore Mode — "Show me what the sensors see"
+
+**Live sensor dashboard:**
+- Raw gravity vector visualized as a 3D arrow on a sphere
+- Quaternion orientation as a wireframe device model mirroring real-time rotation
+- Gyro angular velocity as a live strip chart
+- All overlaid to show how the three sensor streams relate
+
+**Mode testers** — one panel per mode with live-adjustable parameters:
+- **Tilt:** Crosshair on a 2D plane. Shows x/y, magnitude ring, rest indicator. Sliders for `maxAngle`, `deadzone`, `smoothing` — changes apply instantly.
+- **Look:** Virtual panorama (grid sphere) responding to device orientation. Shows yaw/pitch degrees + normalized values. Drift visualization: a dot showing how far "forward" has crept since calibration.
+- **Rotate:** Arc gauge for single-axis value. Toggle between twist/turn/lean. Steering wheel visualization for twist axis.
+- **Raw:** Full MotionData dump, scrolling log with color-coded fields.
+
+**Side-by-side fusion comparison:**
+- Split view: left = `sensorFusion: 'game'`, right = `sensorFusion: 'full'`
+- Same physical movement, two quaternion outputs rendered simultaneously
+- Yaw drift counter on each side — degrees of drift after N seconds
+- This is the primary tool for validating which fusion type to default to per environment
+
+**Calibration visualizer:**
+- Three-phase calibration rendered in real-time: skip count, collection buffer filling, reference established
+- Auto-recal state indicator: current rate tier (rest/near-center/frozen), reference drift vector
+- "Drift accumulation" time-series graph: how far the reference has moved over the session
+
+### 15.2 Tune Mode — "Find the best parameters"
+
+**Recording phase:**
+1. User selects a mode (tilt, look, rotate)
+2. Presses "Record" and performs a representative gameplay session (30-60 seconds)
+3. Explorer captures every raw `MotionData` frame + timestamps
+4. User optionally marks key moments: "this is neutral," "this is full tilt," "I returned to center here"
+
+**Replay-based autotuning:**
+
+Since all mode processing is JavaScript, recorded sensor data can be replayed through the exact same processor code at 100× speed. No device needed for the tuning pass.
+
+1. Replay the recorded raw data through the mode processor with different parameter combinations
+2. Score each combination against quality metrics:
+   - **Responsiveness** — latency from physical movement to processed output crossing threshold
+   - **Stability at rest** — variance of processed output during marked "neutral" segments
+   - **Drift** — how far "center" moved from start to end of session
+   - **Range utilization** — did output reach ±0.8, or is `maxAngle` too large?
+   - **Deadzone feel** — time at exactly 0 vs smooth transitions out of deadzone
+3. Grid search over parameter space: `smoothing` (0.05–0.5), `maxAngle` (15–60), `deadzone` (0–5), auto-recal rates
+4. Present top 3 parameter sets with before/after visualization
+
+**Per-mode auto-derivation:**
+
+- **Tilt:** Ask user to tilt to "comfortable maximum" in each direction → auto-derive `maxAngle`. Measure gravity noise floor at rest → set `deadzone` to 1.5× noise amplitude. Quick tilt-and-return → derive `smoothing` (minimize lag, keep overshoot below threshold).
+- **Look:** "Look around naturally for 30 seconds" → measure yaw drift rate → determines if `'game'` or `'full'` fusion is better for this environment. Quaternion noise at rest → auto-derive deadzone. Replay through both fusion types, compare drift + stability scores.
+- **Rotate:** For twist — rotate wrist to comfortable limits → auto-derive `maxAngle`. For turn — same as look's yaw-specific tuning. Per-axis gravity noise → auto-derive deadzone.
+
+### 15.3 Output & Integration
+
+**Parameter export:** Optimal settings exported as JSON:
+```typescript
+// Auto-derived from tuning session on this device
+{
+  tilt: { smoothing: 0.08, maxAngle: 22, deadzone: 1.5 },
+  look: { smoothing: 0.12, maxAngle: 50, deadzone: 0.8, sensorFusion: 'game' },
+  rotate: { smoothing: 0.1, maxAngle: 40, deadzone: 2.0 }
+}
+```
+
+Games can load device-specific profiles from `Loop.storage`, or the SDK ships with defaults tuned from aggregate device testing.
+
+**Regression testing:** Record a golden session, replay after code changes, verify output matches within tolerance. Catches regressions in processor math or calibration logic.
+
+**Developer onboarding:** Simplified version doubles as a "play with the sliders, see what each parameter does" learning tool for 3P developers.
+
+### 15.4 File Structure
+
+```
+app/src/main/assets/games/sdk-explorer/
+  index.html          — single page, deployed as a game in gallery (dev mode)
+  explorer.js         — UI, visualization, recording engine
+  tuner.js            — replay engine, parameter search, scoring metrics
+  visualizers.js      — canvas-based sensor & output rendering
+  motion/             — imported from SDK (same processor code games use)
+    tilt-processor.js
+    look-processor.js
+    rotate-processor.js
+    calibrator.js
+    auto-recalibrator.js
+    rest-detector.js
+```
+
+The motion processor files are shared between the SDK and the explorer — no duplication. The explorer imports the same classes that `Loop.motion.tilt()` uses internally, ensuring tuning results match real game behavior exactly.
