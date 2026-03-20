@@ -12,6 +12,7 @@ export declare interface Loop$motion {
     getStatus(): string;
     getLatest(): string | null;
     getSensorAvailability(): string;
+    setSensorFusion(type: string): boolean;
 }
 
 export declare interface Loop$buttons {}

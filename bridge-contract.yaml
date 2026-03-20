@@ -26,6 +26,7 @@ namespaces:
       getStatus:         { returns: String }
       getLatest:         { returns: "String?" }
       getSensorAvailability: { returns: String }
+      setSensorFusion:       { params: [type: String], returns: Boolean }
 
     sdkMethods:
       start:
@@ -44,6 +45,9 @@ namespaces:
       stopAll:
         maps: [unsubscribe]
         note: "Iterates all active subscriptions"
+      setSensorFusion:
+        maps: [setSensorFusion]
+        note: "Switch orientation sensor: 'game' (TYPE_GAME_ROTATION_VECTOR) or 'full' (TYPE_ROTATION_VECTOR)"
 
     events:
       - "loop:motion"
