@@ -1,9 +1,18 @@
-import type { ModeType, ModeInput, MotionData, MotionController } from './types';
+import type { ModeType, ModeInput, OrientationData, MotionData, MotionController } from './types';
 import { RestDetector } from './rest-detector';
 import { AutoRecalibrator } from './auto-recalibrator';
 
+/**
+ * Event source types for different controller modes.
+ * - 'orientation': listens to loop:orientation (look, pan)
+ * - 'motion': listens to loop:motion (tilt, rotate gravity axes)
+ * - 'both': listens to both (rotate turn axis needs orientation + gravity for rest)
+ */
+export type EventSource = 'orientation' | 'motion' | 'both';
+
 export abstract class BaseController<T extends ModeInput> implements MotionController<T> {
   abstract readonly mode: ModeType;
+  abstract readonly eventSource: EventSource;
 
   private _calibrated = false;
   private _active = true;
@@ -14,6 +23,10 @@ export abstract class BaseController<T extends ModeInput> implements MotionContr
   protected restDetector = new RestDetector();
   protected autoRecalibrator: AutoRecalibrator;
   protected lastTimestamp = 0;
+
+  // Latest data from each event source
+  protected latestOrientation: OrientationData | null = null;
+  protected latestMotion: MotionData | null = null;
 
   constructor(autoRecalibrator: AutoRecalibrator) {
     this.autoRecalibrator = autoRecalibrator;
@@ -41,17 +54,37 @@ export abstract class BaseController<T extends ModeInput> implements MotionContr
     this.listeners.get(event)?.forEach(fn => fn(...args));
   }
 
-  /** Called by subclass with each raw MotionData frame */
-  protected processFrame(data: MotionData): void {
+  /** Called when a loop:orientation event arrives */
+  handleOrientation(data: OrientationData): void {
+    this.latestOrientation = data;
+    if (this.eventSource === 'orientation' || this.eventSource === 'both') {
+      this.tick(data.alpha); // use alpha as timestamp proxy — real timestamp set in tick
+    }
+  }
+
+  /** Called when a loop:motion event arrives */
+  handleMotion(data: MotionData): void {
+    this.latestMotion = data;
+    if (this.eventSource === 'motion') {
+      this.tick(Date.now());
+    }
+    // For 'both' mode, orientation is the primary driver — motion just updates latestMotion
+  }
+
+  private tick(now: number): void {
     if (!this._active) return;
 
+    const timestamp = Date.now();
     const deltaTime = this.lastTimestamp > 0
-      ? (data.timestamp - this.lastTimestamp) / 1000
+      ? (timestamp - this.lastTimestamp) / 1000
       : 1 / 60;
-    this.lastTimestamp = data.timestamp;
+    this.lastTimestamp = timestamp;
 
-    // Step 1: Rest detection
-    this.restDetector.update(data.smoothGravity, deltaTime);
+    // Step 1: Rest detection (uses gravity from motion data)
+    const gravity = this.latestMotion?.gravity;
+    if (gravity) {
+      this.restDetector.update(gravity, deltaTime);
+    }
     const atRest = this.restDetector.atRest;
     if (atRest !== this._lastRest) {
       this._lastRest = atRest;
@@ -60,43 +93,42 @@ export abstract class BaseController<T extends ModeInput> implements MotionContr
 
     // Step 2: Calibration
     if (!this._calibrated) {
-      const done = this.feedCalibrator(data);
+      const done = this.feedCalibrator();
       if (done) {
         this._calibrated = true;
-        this.onCalibrated(data);
+        this.onCalibrated();
         this.emit('calibrated');
       }
-      return; // Don't emit input during calibration
+      return;
     }
 
-    // Step 3: Auto-recalibration (updates reference in-place)
-    this.updateAutoRecal(data, atRest, deltaTime);
+    // Step 3: Auto-recalibration
+    this.updateAutoRecal(atRest, deltaTime);
 
     // Step 4: Mode-specific processing
-    const input = this.computeInput(data, atRest);
+    const input = this.computeInput(atRest, timestamp);
     this._lastInput = input;
     this.emit('input', input);
   }
 
-  /** Subclass feeds the appropriate calibrator (vector or quaternion) */
-  protected abstract feedCalibrator(data: MotionData): boolean;
+  /** Subclass feeds the appropriate calibrator */
+  protected abstract feedCalibrator(): boolean;
 
-  /** Called once when calibration completes — set reference on processor */
-  protected abstract onCalibrated(data: MotionData): void;
+  /** Called once when calibration completes */
+  protected abstract onCalibrated(): void;
 
   /** Update auto-recalibration reference */
-  protected abstract updateAutoRecal(data: MotionData, atRest: boolean, deltaTime: number): void;
+  protected abstract updateAutoRecal(atRest: boolean, deltaTime: number): void;
 
-  /** Compute mode-specific input from the current frame */
-  protected abstract computeInput(data: MotionData, atRest: boolean): T;
+  /** Compute mode-specific input from current data */
+  protected abstract computeInput(atRest: boolean, timestamp: number): T;
 
   recalibrate(): void {
     this._calibrated = false;
     this.restDetector.reset();
-    this.resetCalibrator(false); // no skip phase
+    this.resetCalibrator(false);
   }
 
-  /** Subclass resets its calibrator */
   protected abstract resetCalibrator(skipPhase: boolean): void;
 
   pauseRecalibration(): void {

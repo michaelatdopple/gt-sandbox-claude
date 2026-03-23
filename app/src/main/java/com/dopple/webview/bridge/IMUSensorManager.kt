@@ -15,21 +15,25 @@ import java.lang.ref.WeakReference
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /**
- * Manages IMU sensor streaming with native sensor fusion.
- * Provides high-frequency accelerometer and gyroscope data to JavaScript.
+ * Manages IMU sensor streaming with W3C-aligned event payloads.
+ *
+ * Fires two events:
+ * - `loop:orientation` — mirrors DeviceOrientationEvent (alpha, beta, gamma, absolute)
+ * - `loop:motion` — mirrors DeviceMotionEvent + gravity enhancement
  *
  * Features:
- * - Subscribe/unsubscribe pattern with unique IDs
+ * - 5 sensors: GAME_ROTATION_VECTOR, ACCELEROMETER, LINEAR_ACCELERATION, GYROSCOPE, GRAVITY
+ * - Quaternion → Euler conversion ported from Chromium's orientation_util.cc
  * - Configurable publish frequency (1-240 Hz)
- * - Native sensor fusion with complementary filter
- * - EMA smoothing for gravity data
- * - Automatic sensor lifecycle management
- *
- * Uses Android TYPE_ACCELEROMETER, TYPE_GYROSCOPE, and TYPE_ROTATION_VECTOR
- * sensors with SENSOR_DELAY_FASTEST for lowest latency.
+ * - setSensorFusion() hot-swap between game/full rotation vector
+ * - Dedicated sensor thread (IMUSensorThread)
+ * - Screen-orientation compensation intentionally omitted for free-rotate stability
  */
 class IMUSensorManager(
     private val context: Context,
@@ -46,10 +50,9 @@ class IMUSensorManager(
         private const val MAX_FREQUENCY_HZ = 240
         private const val DEFAULT_FREQUENCY_HZ = 60
 
-        // Sensor fusion parameters
-        private const val COMPLEMENTARY_FILTER_FACTOR = 0.98f
-        private const val STILLNESS_THRESHOLD = 0.05f // rad/s
-        private const val STILLNESS_DURATION_FOR_CORRECTION = 0.5f // seconds
+        // Euler conversion constants
+        private const val EPSILON = 1e-6
+        private const val RAD_TO_DEG = 180.0 / Math.PI
     }
 
     // Weak references to prevent memory leaks
@@ -58,8 +61,12 @@ class IMUSensorManager(
 
     // Android sensor system
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+
+    // 5 sensors
     private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+    private val linearAcceleration: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+    private val gravitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
     private var orientationSensorType = Sensor.TYPE_GAME_ROTATION_VECTOR
     private var rotationVector: Sensor? = sensorManager.getDefaultSensor(orientationSensorType)
         ?: sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) // fallback
@@ -77,21 +84,15 @@ class IMUSensorManager(
     // Frequency control
     @Volatile private var publishIntervalMs = 1000L / DEFAULT_FREQUENCY_HZ
     @Volatile private var lastPublishTime = 0L
-
-    // EMA smoothing
-    @Volatile private var smoothAlpha = 0.1f
-    private val smoothGravity = floatArrayOf(0f, 0f, -9.81f)
+    @Volatile private var lastIntervalMs = 1000.0 / DEFAULT_FREQUENCY_HZ
 
     // Latest sensor data (thread-safe via volatile)
-    @Volatile private var latestGravity = floatArrayOf(0f, 0f, -9.81f)
+    @Volatile private var latestAccel = floatArrayOf(0f, 0f, 0f)
+    @Volatile private var latestLinearAccel = floatArrayOf(0f, 0f, 0f)
     @Volatile private var latestGyro = floatArrayOf(0f, 0f, 0f)
-    @Volatile private var latestOrientation = floatArrayOf(0f, 0f, 0f, 1f) // x, y, z, w quaternion
+    @Volatile private var latestGravity = floatArrayOf(0f, 0f, -9.81f)
+    @Volatile private var latestQuaternion = floatArrayOf(0f, 0f, 0f, 1f) // x, y, z, w
     @Volatile private var latestSensorTimestamp = 0L
-
-    // Sensor fusion state
-    private val fusedOrientation = floatArrayOf(0f, 0f, 0f, 1f)
-    private var lastGyroTimestamp = 0L
-    private var stillnessTimer = 0f
 
     // Pause state
     @Volatile private var isPaused = false
@@ -115,7 +116,7 @@ class IMUSensorManager(
     /**
      * Unsubscribes from IMU events.
      * @param id Subscription ID returned from subscribe()
-     * @return true if subscription was removed, false if ID not found
+     * @return true if subscription was removed
      */
     fun unsubscribe(id: String): Boolean {
         val removed = subscriptions.remove(id) != null
@@ -141,19 +142,8 @@ class IMUSensorManager(
     }
 
     /**
-     * Sets the EMA smoothing alpha.
-     * @param alpha Smoothing factor (0.0 = max smooth, 1.0 = no smoothing)
-     * @return Actual alpha after clamping
-     */
-    fun setSmoothingAlpha(alpha: Float): Float {
-        smoothAlpha = alpha.coerceIn(0f, 1f)
-        Log.d(TAG, "Smoothing alpha set to $smoothAlpha")
-        return smoothAlpha
-    }
-
-    /**
      * Switches the orientation sensor type.
-     * @param type "game" for TYPE_GAME_ROTATION_VECTOR (6-axis, no mag) or "full" for TYPE_ROTATION_VECTOR (9-axis)
+     * @param type "game" for TYPE_GAME_ROTATION_VECTOR (6-axis) or "full" for TYPE_ROTATION_VECTOR (9-axis)
      * @return true if switch succeeded
      */
     fun setSensorFusion(type: String): Boolean {
@@ -191,18 +181,17 @@ class IMUSensorManager(
             append("\"active\":${subscriptions.isNotEmpty()},")
             append("\"subscriptions\":${subscriptions.size},")
             append("\"frequencyHz\":$frequencyHz,")
-            append("\"smoothingAlpha\":$smoothAlpha,")
             append("\"paused\":$isPaused")
             append("}")
         }
     }
 
     /**
-     * Returns the latest IMU data without requiring subscription.
+     * Returns the latest orientation data without requiring subscription.
      */
     fun getLatest(): String? {
         if (latestSensorTimestamp == 0L) return null
-        return buildIMUData().toJson()
+        return buildOrientationData().toJson()
     }
 
     /**
@@ -213,7 +202,9 @@ class IMUSensorManager(
             append("{")
             append("\"accelerometer\":${accelerometer != null},")
             append("\"gyroscope\":${gyroscope != null},")
-            append("\"rotationVector\":${rotationVector != null}")
+            append("\"rotationVector\":${rotationVector != null},")
+            append("\"linearAcceleration\":${linearAcceleration != null},")
+            append("\"gravity\":${gravitySensor != null}")
             append("}")
         }
     }
@@ -260,24 +251,31 @@ class IMUSensorManager(
     override fun onSensorChanged(event: SensorEvent) {
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
-                System.arraycopy(event.values, 0, latestGravity, 0, 3)
-                updateSmoothedGravity()
+                System.arraycopy(event.values, 0, latestAccel, 0, 3)
                 latestSensorTimestamp = event.timestamp
+            }
+            Sensor.TYPE_LINEAR_ACCELERATION -> {
+                System.arraycopy(event.values, 0, latestLinearAccel, 0, 3)
             }
             Sensor.TYPE_GYROSCOPE -> {
                 System.arraycopy(event.values, 0, latestGyro, 0, 3)
-                updateSensorFusion(event.timestamp)
             }
+            Sensor.TYPE_GRAVITY -> {
+                System.arraycopy(event.values, 0, latestGravity, 0, 3)
+            }
+            Sensor.TYPE_GAME_ROTATION_VECTOR,
             Sensor.TYPE_ROTATION_VECTOR -> {
-                updateOrientationFromRotationVector(event.values)
+                updateQuaternionFromRotationVector(event.values)
             }
         }
 
         // Rate-limited dispatch
         val now = SystemClock.elapsedRealtime()
-        if (now - lastPublishTime >= publishIntervalMs && subscriptions.isNotEmpty() && !isPaused) {
+        val elapsed = now - lastPublishTime
+        if (elapsed >= publishIntervalMs && subscriptions.isNotEmpty() && !isPaused) {
+            lastIntervalMs = elapsed.toDouble()
             lastPublishTime = now
-            dispatchIMUEvent()
+            dispatchEvents()
         }
     }
 
@@ -313,11 +311,17 @@ class IMUSensorManager(
         gyroscope?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
         }
+        linearAcceleration?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+        }
+        gravitySensor?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+        }
         rotationVector?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
         }
 
-        Log.d(TAG, "Sensors registered")
+        Log.d(TAG, "Sensors registered (5 types)")
     }
 
     private fun unregisterSensors() {
@@ -325,111 +329,130 @@ class IMUSensorManager(
         Log.d(TAG, "Sensors unregistered")
     }
 
-    private fun updateSmoothedGravity() {
-        for (i in 0..2) {
-            smoothGravity[i] = smoothAlpha * latestGravity[i] + (1 - smoothAlpha) * smoothGravity[i]
-        }
-    }
-
-    private fun updateOrientationFromRotationVector(rotationVector: FloatArray) {
+    private fun updateQuaternionFromRotationVector(rotationVector: FloatArray) {
         // Rotation vector format: x, y, z, [w], [heading accuracy]
-        // Some devices provide 3 elements, others 4 or 5
         if (rotationVector.size >= 4) {
-            latestOrientation[0] = rotationVector[0] // x
-            latestOrientation[1] = rotationVector[1] // y
-            latestOrientation[2] = rotationVector[2] // z
-            latestOrientation[3] = rotationVector[3] // w
+            latestQuaternion[0] = rotationVector[0] // x
+            latestQuaternion[1] = rotationVector[1] // y
+            latestQuaternion[2] = rotationVector[2] // z
+            latestQuaternion[3] = rotationVector[3] // w
         } else if (rotationVector.size >= 3) {
-            // Compute w from x, y, z (unit quaternion)
             val x = rotationVector[0]
             val y = rotationVector[1]
             val z = rotationVector[2]
-            latestOrientation[0] = x
-            latestOrientation[1] = y
-            latestOrientation[2] = z
-            // w = sqrt(1 - x^2 - y^2 - z^2), clamped to avoid NaN
+            latestQuaternion[0] = x
+            latestQuaternion[1] = y
+            latestQuaternion[2] = z
             val wSquared = 1f - x * x - y * y - z * z
-            latestOrientation[3] = if (wSquared > 0) sqrt(wSquared) else 0f
+            latestQuaternion[3] = if (wSquared > 0) sqrt(wSquared) else 0f
         }
     }
 
     /**
-     * Native sensor fusion using complementary filter.
-     * Combines gyroscope integration with accelerometer-based correction.
+     * Converts quaternion to Euler angles (alpha, beta, gamma) matching W3C DeviceOrientationEvent.
+     *
+     * Port of Chromium's orientation_util.cc quaternion → rotation matrix → Euler angles
+     * using Z-X'-Y'' intrinsic Tait-Bryan decomposition.
+     *
+     * Screen-orientation compensation is intentionally omitted for free-rotate stability.
      */
-    private fun updateSensorFusion(timestamp: Long) {
-        if (lastGyroTimestamp == 0L) {
-            lastGyroTimestamp = timestamp
-            return
-        }
+    private fun quaternionToEuler(qx: Float, qy: Float, qz: Float, qw: Float): DoubleArray {
+        // Quaternion to rotation matrix
+        val sqx = qx.toDouble() * qx
+        val sqy = qy.toDouble() * qy
+        val sqz = qz.toDouble() * qz
+        val sqw = qw.toDouble() * qw
 
-        val deltaTimeNs = timestamp - lastGyroTimestamp
-        val deltaTimeSec = deltaTimeNs / 1_000_000_000f
-        lastGyroTimestamp = timestamp
+        val m11 = sqw + sqx - sqy - sqz
+        val m12 = 2.0 * (qx * qy - qw * qz)
+        val m13 = 2.0 * (qx * qz + qw * qy)
+        val m21 = 2.0 * (qx * qy + qw * qz)
+        val m22 = sqw - sqx + sqy - sqz
+        val m23 = 2.0 * (qy * qz - qw * qx)
+        val m31 = 2.0 * (qx * qz - qw * qy)
+        val m32 = 2.0 * (qy * qz + qw * qx)
+        val m33 = sqw - sqx - sqy + sqz
 
-        // Calculate angular velocity magnitude for stillness detection
-        val angularVelocityMag = sqrt(
-            latestGyro[0] * latestGyro[0] +
-            latestGyro[1] * latestGyro[1] +
-            latestGyro[2] * latestGyro[2]
-        )
+        // Z-X'-Y'' Tait-Bryan angles (matching W3C spec)
+        // beta = asin(-m32)
+        // alpha = atan2(m31, m33)  — when cos(beta) != 0
+        // gamma = atan2(m12, m22)  — when cos(beta) != 0
 
-        // Stillness detection for drift correction
-        if (angularVelocityMag < STILLNESS_THRESHOLD) {
-            stillnessTimer += deltaTimeSec
-            if (stillnessTimer >= STILLNESS_DURATION_FOR_CORRECTION) {
-                // Apply drift correction from accelerometer
-                applyDriftCorrection()
-            }
+        val sinBeta = -m32
+        val beta: Double
+        val alpha: Double
+        val gamma: Double
+
+        if (abs(sinBeta) < 1.0 - EPSILON) {
+            // Normal case
+            beta = asin(sinBeta.coerceIn(-1.0, 1.0)) * RAD_TO_DEG
+            alpha = atan2(m31, m33) * RAD_TO_DEG
+            gamma = atan2(m12, m22) * RAD_TO_DEG
         } else {
-            stillnessTimer = 0f
+            // Gimbal lock: cos(beta) ≈ 0
+            beta = if (sinBeta > 0) 90.0 else -90.0
+            alpha = atan2(-m13, m11) * RAD_TO_DEG
+            gamma = 0.0
         }
 
-        // Apply complementary filter
-        // In practice, we rely on TYPE_ROTATION_VECTOR which already
-        // implements sensor fusion, but we track stillness for stability
+        // Normalize alpha to [0, 360)
+        val normalizedAlpha = ((alpha % 360.0) + 360.0) % 360.0
+
+        return doubleArrayOf(normalizedAlpha, beta, gamma)
     }
 
-    private fun applyDriftCorrection() {
-        // During stillness, the rotation vector sensor already handles drift
-        // This is a hook for additional correction if needed
-        Log.v(TAG, "Stillness detected, drift correction applied")
-    }
-
-    private fun buildIMUData(): IMUData {
-        val seq = sequenceNumber.incrementAndGet()
-        val timestamp = SystemClock.elapsedRealtime().toDouble()
-
-        return IMUData(
-            gravity = Vector3(latestGravity[0], latestGravity[1], latestGravity[2]),
-            smoothGravity = Vector3(smoothGravity[0], smoothGravity[1], smoothGravity[2]),
-            delta = Vector3(latestGyro[0], latestGyro[1], latestGyro[2]),
-            orientation = Quaternion(
-                latestOrientation[0],
-                latestOrientation[1],
-                latestOrientation[2],
-                latestOrientation[3]
-            ),
-            timestamp = timestamp,
-            sensorTimestamp = latestSensorTimestamp,
-            sequenceNumber = seq
+    private fun buildOrientationData(): OrientationData {
+        val euler = quaternionToEuler(
+            latestQuaternion[0], latestQuaternion[1],
+            latestQuaternion[2], latestQuaternion[3]
+        )
+        val isAbsolute = orientationSensorType == Sensor.TYPE_ROTATION_VECTOR
+        return OrientationData(
+            alpha = euler[0],
+            beta = euler[1],
+            gamma = euler[2],
+            absolute = isAbsolute
         )
     }
 
-    private fun dispatchIMUEvent() {
+    private fun buildMotionEventData(): MotionEventData {
+        return MotionEventData(
+            accelerationIncludingGravity = Vector3(latestAccel[0], latestAccel[1], latestAccel[2]),
+            acceleration = Vector3(latestLinearAccel[0], latestLinearAccel[1], latestLinearAccel[2]),
+            rotationRate = RotationRate(
+                // Gyroscope gives rad/s, W3C spec uses deg/s
+                alpha = (latestGyro[2] * RAD_TO_DEG),  // Z-axis → alpha
+                beta = (latestGyro[0] * RAD_TO_DEG),   // X-axis → beta
+                gamma = (latestGyro[1] * RAD_TO_DEG)   // Y-axis → gamma
+            ),
+            interval = lastIntervalMs,
+            gravity = Vector3(latestGravity[0], latestGravity[1], latestGravity[2])
+        )
+    }
+
+    private fun dispatchEvents() {
         val startTimeNs = System.nanoTime()
         val activity = activityRef.get() ?: return
         val webView = webViewRef.get() ?: return
 
-        val imuData = buildIMUData()
-        val script = "window.dispatchEvent(new CustomEvent('${BridgeEventTypes.MOTION_EVENT}',{detail:${imuData.toJson()}}));"
+        val seq = sequenceNumber.incrementAndGet()
+        val orientationData = buildOrientationData()
+        val motionData = buildMotionEventData()
+
+        val script = buildString {
+            // Dispatch loop:orientation (mirrors DeviceOrientationEvent)
+            append("window.dispatchEvent(new CustomEvent('${BridgeEventTypes.ORIENTATION_EVENT}',")
+            append("{detail:${orientationData.toJson()}}));")
+            // Dispatch loop:motion (mirrors DeviceMotionEvent + gravity)
+            append("window.dispatchEvent(new CustomEvent('${BridgeEventTypes.MOTION_EVENT}',")
+            append("{detail:${motionData.toJson()}}));")
+        }
 
         activity.runOnUiThread {
             webView.evaluateJavascript(script) { _ ->
                 val latencyMs = (System.nanoTime() - startTimeNs) / 1_000_000.0
-                // Only log occasionally to avoid flooding logcat
-                if (sequenceNumber.get() % 100 == 0L) {
-                    Log.d(TAG_LATENCY, "IMU dispatch latency: ${String.format("%.2f", latencyMs)}ms (seq: ${sequenceNumber.get()})")
+                if (seq % 100 == 0L) {
+                    Log.d(TAG_LATENCY, "IMU dispatch latency: ${String.format("%.2f", latencyMs)}ms (seq: $seq)")
                 }
             }
         }

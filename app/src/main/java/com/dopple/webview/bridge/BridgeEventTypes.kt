@@ -12,6 +12,7 @@ import android.view.KeyEvent
 object BridgeEventTypes {
     // Event namespaces (Loop SDK format)
     const val BUTTON_EVENT = "loop:button"
+    const val ORIENTATION_EVENT = "loop:orientation"
     const val MOTION_EVENT = "loop:motion"
     const val HAPTICS_EVENT = "loop:haptics"
     const val MATCH_EVENT = "loop:match"

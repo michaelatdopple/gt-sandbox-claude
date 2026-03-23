@@ -114,7 +114,7 @@ class WebAppInterface(
     /**
      * Motion namespace - exposed as Loop$motion in JavaScript.
      * Provides sensor streaming with subscribe/unsubscribe pattern.
-     * Events are dispatched as 'loop:motion' CustomEvents.
+     * Events are dispatched as 'loop:orientation' and 'loop:motion' CustomEvents.
      */
     inner class IMUNamespace : IMUNamespaceContract {
         /**
@@ -142,14 +142,6 @@ class WebAppInterface(
         override fun setFrequency(hz: Int): Int = imuSensorManager.setFrequency(hz)
 
         /**
-         * Sets the EMA smoothing alpha for gravity smoothing.
-         * @param alpha Smoothing factor (0.0 = max smooth, 1.0 = no smoothing)
-         * @return Actual alpha after clamping
-         */
-        @JavascriptInterface
-        override fun setSmoothingAlpha(alpha: Float): Float = imuSensorManager.setSmoothingAlpha(alpha)
-
-        /**
          * Switches the orientation sensor type.
          * @param type "game" (TYPE_GAME_ROTATION_VECTOR, 6-axis) or "full" (TYPE_ROTATION_VECTOR, 9-axis)
          * @return true if switch succeeded
@@ -159,7 +151,7 @@ class WebAppInterface(
 
         /**
          * Returns current IMU streaming status.
-         * @return JSON: {active, subscriptions, frequencyHz, smoothingAlpha, paused}
+         * @return JSON: {active, subscriptions, frequencyHz, paused}
          */
         @JavascriptInterface
         override fun getStatus(): String = imuSensorManager.getStatus()

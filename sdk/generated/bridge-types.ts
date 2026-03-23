@@ -8,11 +8,10 @@ export declare interface Loop$motion {
     subscribe(): string;
     unsubscribe(id: string): boolean;
     setFrequency(hz: number): number;
-    setSmoothingAlpha(alpha: number): number;
+    setSensorFusion(type: string): boolean;
     getStatus(): string;
     getLatest(): string | null;
     getSensorAvailability(): string;
-    setSensorFusion(type: string): boolean;
 }
 
 export declare interface Loop$buttons {}

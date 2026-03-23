@@ -1,10 +1,19 @@
-import type { Vector3, Quaternion, LookInput } from './types';
+import type { Vector3, LookInput } from './types';
 import { applyDeadzone } from './deadzone';
 
-const DEG = 180 / Math.PI;
-
+/**
+ * Look processor — works directly with W3C Euler angles (alpha, beta, gamma).
+ *
+ * Since the native bridge already converts quaternion→Euler, there's no need
+ * to convert back to quaternion. Direct Euler delta computation is simpler
+ * and avoids frame convention issues.
+ *
+ * Alpha delta = yaw (left/right heading change)
+ * Beta delta = pitch (tilt up/down)
+ */
 export class LookProcessor {
-  private refInverse: Quaternion = { x: 0, y: 0, z: 0, w: 1 };
+  private refAlpha = 0;
+  private refBeta = 0;
   private maxAngle: number;
   private deadzone: number;
   private sensitivity: { x: number; y: number };
@@ -15,25 +24,20 @@ export class LookProcessor {
     this.sensitivity = sensitivity;
   }
 
-  setReference(quat: Quaternion): void {
-    // Inverse of unit quaternion = conjugate
-    this.refInverse = { x: -quat.x, y: -quat.y, z: -quat.z, w: quat.w };
+  setReference(alpha: number, beta: number): void {
+    this.refAlpha = alpha;
+    this.refBeta = beta;
   }
 
-  process(orientation: Quaternion, gravity: Vector3, atRest: boolean, timestamp: number): LookInput {
-    // Delta quaternion: inverse(ref) * current
-    const delta = quatMultiply(this.refInverse, orientation);
+  process(alpha: number, beta: number, gravity: Vector3, atRest: boolean, timestamp: number): LookInput {
+    // Compute yaw delta (alpha wraps 0..360)
+    let yawRaw = alpha - this.refAlpha;
+    // Normalize to -180..180
+    if (yawRaw > 180) yawRaw -= 360;
+    if (yawRaw < -180) yawRaw += 360;
 
-    // Extract yaw and pitch from delta quaternion
-    // Yaw (Y-axis rotation): atan2(2*(wy - xz), 1 - 2*(y²+z²))
-    // Pitch (X-axis rotation): asin(2*(wx + yz))
-    const yawRaw = Math.atan2(
-      2 * (delta.w * delta.y - delta.x * delta.z),
-      1 - 2 * (delta.y * delta.y + delta.z * delta.z)
-    ) * DEG;
-
-    const sinP = 2 * (delta.w * delta.x + delta.y * delta.z);
-    const pitchRaw = Math.asin(Math.max(-1, Math.min(1, sinP))) * DEG;
+    // Compute pitch delta (beta is -180..180, no wrapping needed for small angles)
+    const pitchRaw = beta - this.refBeta;
 
     // Apply sensitivity
     const yaw = yawRaw * this.sensitivity.x;
@@ -48,8 +52,8 @@ export class LookProcessor {
   }
 }
 
-/** Hamilton product of two quaternions */
-function quatMultiply(a: Quaternion, b: Quaternion): Quaternion {
+/** Hamilton product of two quaternions (retained for other consumers) */
+export function quatMultiply(a: { x: number; y: number; z: number; w: number }, b: { x: number; y: number; z: number; w: number }) {
   return {
     x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
     y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
@@ -57,5 +61,3 @@ function quatMultiply(a: Quaternion, b: Quaternion): Quaternion {
     w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
   };
 }
-
-export { quatMultiply };

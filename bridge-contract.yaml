@@ -19,25 +19,25 @@ namespaces:
     sdkExport: Loop.motion
 
     nativeMethods:
-      subscribe:         { returns: String }
-      unsubscribe:       { params: [id: String], returns: Boolean }
-      setFrequency:      { params: [hz: Int], returns: Int }
-      setSmoothingAlpha: { params: [alpha: Float], returns: Float }
-      getStatus:         { returns: String }
-      getLatest:         { returns: "String?" }
-      getSensorAvailability: { returns: String }
+      subscribe:             { returns: String }
+      unsubscribe:           { params: [id: String], returns: Boolean }
+      setFrequency:          { params: [hz: Int], returns: Int }
       setSensorFusion:       { params: [type: String], returns: Boolean }
+      getStatus:             { returns: String }
+      getLatest:             { returns: "String?" }
+      getSensorAvailability: { returns: String }
 
     sdkMethods:
       start:
-        maps: [subscribe, setFrequency, setSmoothingAlpha]
-        note: "Orchestrates subscribe + optional frequency/smoothing"
+        maps: [subscribe, setFrequency]
+        note: "Orchestrates subscribe + optional frequency"
       isSupported:
         maps: [getSensorAvailability]
       setFrequency:
         maps: [setFrequency]
-      setSmoothingAlpha:
-        maps: [setSmoothingAlpha]
+      setSensorFusion:
+        maps: [setSensorFusion]
+        note: "Switch orientation sensor: 'game' (TYPE_GAME_ROTATION_VECTOR) or 'full' (TYPE_ROTATION_VECTOR)"
       getStatus:
         maps: [getStatus]
       getLatest:
@@ -45,11 +45,21 @@ namespaces:
       stopAll:
         maps: [unsubscribe]
         note: "Iterates all active subscriptions"
-      setSensorFusion:
-        maps: [setSensorFusion]
-        note: "Switch orientation sensor: 'game' (TYPE_GAME_ROTATION_VECTOR) or 'full' (TYPE_ROTATION_VECTOR)"
+      tilt:
+        maps: [subscribe, setFrequency]
+        note: "Gravity-based 2D joystick using loop:motion events"
+      look:
+        maps: [subscribe, setFrequency, setSensorFusion]
+        note: "Quaternion-based panoramic view using loop:orientation events"
+      pan:
+        maps: [subscribe, setFrequency, setSensorFusion]
+        note: "Quaternion-based scrolling with edge absorption using loop:orientation events"
+      rotate:
+        maps: [subscribe, setFrequency, setSensorFusion]
+        note: "Single-axis rotation using loop:motion or loop:orientation depending on axis"
 
     events:
+      - "loop:orientation"
       - "loop:motion"
 
   buttons:

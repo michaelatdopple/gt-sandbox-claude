@@ -10,7 +10,7 @@ interface IMUNamespaceContract {
     @JavascriptInterface fun subscribe(): String
     @JavascriptInterface fun unsubscribe(id: String): Boolean
     @JavascriptInterface fun setFrequency(hz: Int): Int
-    @JavascriptInterface fun setSmoothingAlpha(alpha: Float): Float
+    @JavascriptInterface fun setSensorFusion(type: String): Boolean
     @JavascriptInterface fun getStatus(): String
     @JavascriptInterface fun getLatest(): String?
     @JavascriptInterface fun getSensorAvailability(): String

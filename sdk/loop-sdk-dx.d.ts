@@ -34,18 +34,32 @@ interface Quaternion {
 interface MotionOptions {
     /** Update frequency in Hz (1-240, default 60) */
     frequency?: number;
-    /** Smoothing alpha for gravity (0.0 = max smooth, 1.0 = no smoothing, default 0.1) */
-    smoothing?: number;
 }
 
-/** Motion sensor data payload */
+/** W3C DeviceOrientationEvent-aligned data from loop:orientation */
+interface OrientationData {
+    /** Rotation around Z axis (0..360) */
+    alpha: number;
+    /** Rotation around X axis (-180..180) */
+    beta: number;
+    /** Rotation around Y axis (-90..90) */
+    gamma: number;
+    /** true if orientation is relative to Earth's coordinate frame */
+    absolute: boolean;
+}
+
+/** W3C DeviceMotionEvent-aligned data from loop:motion + gravity enhancement */
 interface MotionData {
+    /** Raw accelerometer including gravity (TYPE_ACCELEROMETER) */
+    accelerationIncludingGravity: Vector3;
+    /** Linear acceleration without gravity (TYPE_LINEAR_ACCELERATION) */
+    acceleration: Vector3;
+    /** Angular velocity in deg/s (TYPE_GYROSCOPE) */
+    rotationRate: { alpha: number; beta: number; gamma: number };
+    /** Milliseconds between samples */
+    interval: number;
+    /** Clean gravity vector from HAL (TYPE_GRAVITY) — enhancement over W3C */
     gravity: Vector3;
-    smoothGravity: Vector3;
-    orientation: Quaternion;
-    delta: Vector3;
-    timestamp: number;
-    sequenceNumber: number;
 }
 
 /** Motion streaming status */
@@ -53,7 +67,6 @@ interface MotionStatus {
     active: boolean;
     subscriptions: number;
     frequencyHz: number;
-    smoothingAlpha: number;
     paused: boolean;
 }
 
@@ -61,8 +74,13 @@ interface MotionStatus {
 interface MotionSubscription extends EventTarget {
     readonly id: string;
     readonly active: boolean;
+    /** Orientation event data (loop:orientation) */
+    on(event: 'orientation', handler: (data: OrientationData) => void): this;
+    /** Motion event data (loop:motion) */
+    on(event: 'motion', handler: (data: MotionData) => void): this;
+    /** Raw data (backwards compat alias for 'motion') */
     on(event: 'data', handler: (data: MotionData) => void): this;
-    off(event: 'data', handler: (data: MotionData) => void): this;
+    off(event: string, handler: Function): this;
     stop(): void;
 }
 
@@ -98,7 +116,6 @@ interface RotateInput {
 
 interface TiltOptions {
   frequency?: number;
-  smoothing?: number;
   maxAngle?: number;
   deadzone?: number;
   sensitivity?: { x: number; y: number };
@@ -107,7 +124,6 @@ interface TiltOptions {
 
 interface LookOptions {
   frequency?: number;
-  smoothing?: number;
   maxAngle?: number;
   deadzone?: number;
   sensitivity?: { x: number; y: number };
@@ -116,9 +132,20 @@ interface LookOptions {
   autoRecalibrate?: boolean;
 }
 
+interface PanOptions {
+  frequency?: number;
+  maxAngle?: number;
+  deadzone?: number;
+  sensitivity?: { x: number; y: number };
+  /** @default 'game' */
+  sensorFusion?: SensorFusion;
+  /** Edge absorption strength (default 0.3) */
+  absorbRate?: number;
+  autoRecalibrate?: boolean;
+}
+
 interface RotateOptions {
   frequency?: number;
-  smoothing?: number;
   maxAngle?: number;
   deadzone?: number;
   sensitivity?: number;
@@ -128,8 +155,18 @@ interface RotateOptions {
   autoRecalibrate?: boolean;
 }
 
-interface MotionController<T = TiltInput | LookInput | RotateInput> {
-  readonly mode: 'tilt' | 'look' | 'rotate';
+interface PanInput {
+  yaw: number;
+  pitch: number;
+  x: number;       // -1..1 normalized
+  y: number;       // -1..1 normalized
+  magnitude: number;
+  atRest: boolean;
+  timestamp: number;
+}
+
+interface MotionController<T = TiltInput | LookInput | PanInput | RotateInput> {
+  readonly mode: 'tilt' | 'look' | 'pan' | 'rotate';
   readonly calibrated: boolean;
   readonly active: boolean;
   readonly lastInput: T | null;
@@ -151,6 +188,10 @@ interface LookController extends MotionController<LookInput> {
   readonly mode: 'look';
 }
 
+interface PanController extends MotionController<PanInput> {
+  readonly mode: 'pan';
+}
+
 interface RotateController extends MotionController<RotateInput> {
   readonly mode: 'rotate';
 }
@@ -160,14 +201,17 @@ interface MotionAPI {
     isSupported(): boolean;
     start(options?: MotionOptions): Promise<MotionSubscription>;
     setFrequency(hz: number): MotionAPI;
-    setSmoothingAlpha(alpha: number): MotionAPI;
+    /** Switch sensor fusion: 'game' (6-axis) or 'full' (9-axis with magnetometer) */
+    setSensorFusion(type: 'game' | 'full'): void;
     getStatus(): MotionStatus;
-    getLatest(): MotionData | null;
+    getLatest(): OrientationData | null;
     stopAll(): void;
-    /** Start tilt mode — gravity-based 2D joystick. */
+    /** Start tilt mode — gravity-based 2D joystick using loop:motion events. */
     tilt(options?: TiltOptions): Promise<TiltController>;
-    /** Start look mode — quaternion-based panoramic view. */
+    /** Start look mode — quaternion-based panoramic view using loop:orientation events. */
     look(options?: LookOptions): Promise<LookController>;
+    /** Start pan mode — scrolling with edge absorption using loop:orientation events. */
+    pan(options?: PanOptions): Promise<PanController>;
     /** Start rotate mode — single-axis rotation. */
     rotate(options?: RotateOptions): Promise<RotateController>;
     /** Start raw motion data subscription (alias for start). */
@@ -389,6 +433,10 @@ declare global {
 
 // ==================== Custom Events ====================
 
+interface LoopOrientationEvent extends CustomEvent<OrientationData> {
+    type: 'loop:orientation';
+}
+
 interface LoopMotionEvent extends CustomEvent<MotionData> {
     type: 'loop:motion';
 }
@@ -443,6 +491,7 @@ interface LoopResumeEvent extends CustomEvent<SystemResumeEvent> {
 
 declare global {
     interface WindowEventMap {
+        'loop:orientation': LoopOrientationEvent;
         'loop:motion': LoopMotionEvent;
         'loop:button': LoopButtonEvent;
         'loop:ready': LoopReadyEvent;

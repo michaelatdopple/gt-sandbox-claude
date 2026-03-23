@@ -21,7 +21,7 @@ export class TiltProcessor {
     this.zAngle = Math.atan2(gravity.x || 0, (-gravity.y) || 0);
   }
 
-  /** @param gravity Use MotionData.smoothGravity (low-pass filtered) per spec Section 5.1 */
+  /** @param gravity Uses TYPE_GRAVITY from HAL (clean, no EMA filter needed) */
   process(gravity: Vector3, atRest: boolean, timestamp: number): TiltInput {
     // Compute tilt angles using atan2
     const currentAngleX = Math.atan2(gravity.x, -gravity.z) * (180 / Math.PI);

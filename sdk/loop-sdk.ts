@@ -2,8 +2,9 @@
 import type { Loop$motion, Loop$buttons, Loop$haptics, Loop$match, Loop$pack, Loop$ble, Loop$storage, Loop$system } from './generated/bridge-types';
 import { TiltController } from './motion/tilt-controller';
 import { LookController } from './motion/look-controller';
+import { PanController } from './motion/pan-controller';
 import { RotateController } from './motion/rotate-controller';
-import type { TiltOptions, LookOptions, RotateOptions, MotionController } from './motion/types';
+import type { TiltOptions, LookOptions, PanOptions, RotateOptions, MotionController } from './motion/types';
 /**
  * Loop SDK - Professional WebView Bridge for Game Developers
  *
@@ -32,14 +33,12 @@ const native = {
 
 interface MotionStartOptions {
     frequency?: number;
-    smoothing?: number;
 }
 
 interface MotionStatusResult {
     active: boolean;
     subscriptions: number;
     frequencyHz: number;
-    smoothingAlpha: number;
     paused: boolean;
 }
 
@@ -191,7 +190,8 @@ class MotionSubscription extends EventTarget {
 
 const MotionAPI = {
     _subscriptions: new Map<string, MotionSubscription>(),
-    _globalListener: null as ((e: Event) => void) | null,
+    _orientationListener: null as ((e: Event) => void) | null,
+    _motionListener: null as ((e: Event) => void) | null,
     _activeController: null as MotionController | null,
 
     /**
@@ -208,7 +208,7 @@ const MotionAPI = {
     },
 
     /**
-     * Start receiving motion data.
+     * Start receiving raw motion data (both orientation and motion events).
      */
     async start(options: MotionStartOptions = {}): Promise<MotionSubscription> {
         if (!native.motion) {
@@ -220,13 +220,10 @@ const MotionAPI = {
         if (options.frequency !== undefined) {
             native.motion.setFrequency(options.frequency);
         }
-        if (options.smoothing !== undefined) {
-            native.motion.setSmoothingAlpha(options.smoothing);
-        }
 
         const subscription = new MotionSubscription(subId);
         this._subscriptions.set(subId, subscription);
-        this._ensureGlobalListener();
+        this._ensureGlobalListeners();
 
         return subscription;
     },
@@ -242,13 +239,12 @@ const MotionAPI = {
     },
 
     /**
-     * Set the smoothing alpha for gravity calculations.
+     * Switch sensor fusion type.
      */
-    setSmoothingAlpha(alpha: number): any {
+    setSensorFusion(type: 'game' | 'full'): void {
         if (native.motion) {
-            native.motion.setSmoothingAlpha(alpha);
+            native.motion.setSensorFusion(type);
         }
-        return this;
     },
 
     /**
@@ -256,17 +252,17 @@ const MotionAPI = {
      */
     getStatus(): MotionStatusResult {
         if (!native.motion) {
-            return { active: false, subscriptions: 0, frequencyHz: 0, smoothingAlpha: 0.1, paused: false };
+            return { active: false, subscriptions: 0, frequencyHz: 0, paused: false };
         }
         try {
             return JSON.parse(native.motion.getStatus()) as MotionStatusResult;
         } catch (e) {
-            return { active: false, subscriptions: 0, frequencyHz: 0, smoothingAlpha: 0.1, paused: false };
+            return { active: false, subscriptions: 0, frequencyHz: 0, paused: false };
         }
     },
 
     /**
-     * Get the latest motion data without subscription.
+     * Get the latest orientation data without subscription.
      */
     getLatest(): unknown | null {
         if (!native.motion) return null;
@@ -280,6 +276,7 @@ const MotionAPI = {
 
     /**
      * Start tilt mode — gravity-based 2D joystick.
+     * Uses loop:motion events (clean TYPE_GRAVITY from HAL).
      */
     async tilt(options: TiltOptions = {}): Promise<TiltController> {
         if (!this.isSupported()) {
@@ -289,23 +286,14 @@ const MotionAPI = {
         const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
         const ctrl = new TiltController({ ...options, frequency: freq });
         this._activeController = ctrl as unknown as MotionController;
-        // Start internal raw subscription
-        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
-        sub.on('data', (data: any) => ctrl['processFrame'](data));
-        // Wire stop to cleanup
-        const origStop = ctrl.stop.bind(ctrl);
-        ctrl.stop = () => {
-            origStop();
-            sub.stop();
-            if (this._activeController === (ctrl as unknown as MotionController)) {
-                this._activeController = null;
-            }
-        };
+        const sub = await this.start({ frequency: freq });
+        this._wireController(ctrl, sub);
         return ctrl;
     },
 
     /**
      * Start look mode — quaternion-based panoramic view.
+     * Uses loop:orientation events (Euler → quaternion in SDK).
      */
     async look(options: LookOptions = {}): Promise<LookController> {
         if (!this.isSupported()) {
@@ -313,31 +301,39 @@ const MotionAPI = {
         }
         this._activeController?.stop();
         const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
-        // Switch sensor fusion if needed
         if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
             native.motion.setSensorFusion(options.sensorFusion);
         }
         const ctrl = new LookController({ ...options, frequency: freq });
         this._activeController = ctrl as unknown as MotionController;
-        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
-        sub.on('data', (data: any) => ctrl['processFrame'](data));
-        const origStop = ctrl.stop.bind(ctrl);
-        ctrl.stop = () => {
-            origStop();
-            sub.stop();
-            // Restore default sensor fusion
-            if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
-                native.motion.setSensorFusion('game');
-            }
-            if (this._activeController === (ctrl as unknown as MotionController)) {
-                this._activeController = null;
-            }
-        };
+        const sub = await this.start({ frequency: freq });
+        this._wireController(ctrl, sub, options.sensorFusion);
+        return ctrl;
+    },
+
+    /**
+     * Start pan mode — quaternion-based scrolling with edge absorption.
+     * Uses loop:orientation events. No auto-recalibration by default.
+     */
+    async pan(options: PanOptions = {}): Promise<PanController> {
+        if (!this.isSupported()) {
+            throw new Error('Motion sensors not available on this device');
+        }
+        this._activeController?.stop();
+        const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
+        if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
+            native.motion.setSensorFusion(options.sensorFusion);
+        }
+        const ctrl = new PanController({ ...options, frequency: freq });
+        this._activeController = ctrl as unknown as MotionController;
+        const sub = await this.start({ frequency: freq });
+        this._wireController(ctrl, sub, options.sensorFusion);
         return ctrl;
     },
 
     /**
      * Start rotate mode — single-axis rotation.
+     * Uses loop:motion (gravity axes) or loop:orientation (turn axis).
      */
     async rotate(options: RotateOptions = {}): Promise<RotateController> {
         if (!this.isSupported()) {
@@ -345,25 +341,13 @@ const MotionAPI = {
         }
         this._activeController?.stop();
         const freq = Math.max(1, Math.min(240, options.frequency ?? 60));
-        // Switch sensor fusion for turn axis
         if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
             native.motion.setSensorFusion(options.sensorFusion);
         }
         const ctrl = new RotateController({ ...options, frequency: freq });
         this._activeController = ctrl as unknown as MotionController;
-        const sub = await this.start({ frequency: freq, smoothing: options.smoothing });
-        sub.on('data', (data: any) => ctrl['processFrame'](data));
-        const origStop = ctrl.stop.bind(ctrl);
-        ctrl.stop = () => {
-            origStop();
-            sub.stop();
-            if (options.sensorFusion && options.sensorFusion !== 'game' && native.motion) {
-                native.motion.setSensorFusion('game');
-            }
-            if (this._activeController === (ctrl as unknown as MotionController)) {
-                this._activeController = null;
-            }
-        };
+        const sub = await this.start({ frequency: freq });
+        this._wireController(ctrl, sub, options.sensorFusion);
         return ctrl;
     },
 
@@ -386,23 +370,61 @@ const MotionAPI = {
         this._subscriptions.clear();
     },
 
+    /**
+     * Wire a controller to receive both orientation and motion events,
+     * and set up cleanup on stop.
+     */
+    _wireController(
+        ctrl: { handleOrientation: Function; handleMotion: Function; stop: Function; eventSource: string },
+        sub: MotionSubscription,
+        sensorFusion?: string
+    ): void {
+        sub.on('orientation', (data: any) => ctrl.handleOrientation(data));
+        sub.on('motion', (data: any) => ctrl.handleMotion(data));
+        const origStop = ctrl.stop.bind(ctrl);
+        const self = this;
+        ctrl.stop = () => {
+            origStop();
+            sub.stop();
+            if (sensorFusion && sensorFusion !== 'game' && native.motion) {
+                native.motion.setSensorFusion('game');
+            }
+            if (self._activeController === (ctrl as unknown as MotionController)) {
+                self._activeController = null;
+            }
+        };
+    },
+
     _removeSubscription(id: string): void {
         this._subscriptions.delete(id);
     },
 
-    _ensureGlobalListener(): void {
-        if (this._globalListener) return;
-
-        this._globalListener = (e: Event) => {
-            const data = (e as CustomEvent).detail;
-            for (const sub of this._subscriptions.values()) {
-                if (sub.active) {
-                    sub.dispatchEvent(new CustomEvent('data', { detail: data }));
+    _ensureGlobalListeners(): void {
+        if (!this._orientationListener) {
+            this._orientationListener = (e: Event) => {
+                const data = (e as CustomEvent).detail;
+                for (const sub of this._subscriptions.values()) {
+                    if (sub.active) {
+                        sub.dispatchEvent(new CustomEvent('orientation', { detail: data }));
+                    }
                 }
-            }
-        };
+            };
+            window.addEventListener('loop:orientation', this._orientationListener);
+        }
 
-        window.addEventListener('loop:motion', this._globalListener);
+        if (!this._motionListener) {
+            this._motionListener = (e: Event) => {
+                const data = (e as CustomEvent).detail;
+                for (const sub of this._subscriptions.values()) {
+                    if (sub.active) {
+                        sub.dispatchEvent(new CustomEvent('motion', { detail: data }));
+                        // Also fire 'data' for backwards compatibility with raw subscriptions
+                        sub.dispatchEvent(new CustomEvent('data', { detail: data }));
+                    }
+                }
+            };
+            window.addEventListener('loop:motion', this._motionListener);
+        }
     }
 };
 
